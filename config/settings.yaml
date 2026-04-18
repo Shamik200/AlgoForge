@@ -1,0 +1,64 @@
+# ═══════════════════════════════════════════════════════════
+# AlgoForge Configuration
+# ═══════════════════════════════════════════════════════════
+# Single source of truth for all system settings.
+# Override any value with env vars: ALGOFORGE_<SECTION>__<KEY>
+# Example: ALGOFORGE_MARKET__SELECTED_MARKET=crypto
+
+# ── Market Selection ──────────────────────────────────────
+# Options: stocks_india, stocks_us, crypto, forex
+market:
+  selected_market: stocks_us
+  timeframe_mode: intraday  # intraday or swing
+  paper_trading_capital: 100000.0
+  currency: USD
+
+# ── Redis Connection ──────────────────────────────────────
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+  password: null
+  max_connections: 20
+  socket_timeout: 5.0
+
+# ── Data Feed ─────────────────────────────────────────────
+data_feed:
+  provider: yfinance
+  symbols:
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - TSLA
+  base_timeframe: "1m"
+  history_period: "1mo"
+  poll_interval_seconds: 60
+  max_retries: 3
+  retry_delay_seconds: 2.0
+
+# ── Logging ───────────────────────────────────────────────
+logging:
+  level: INFO
+  format: json       # json or console
+  log_file: logs/algoforge.log
+  log_to_stdout: true
+
+# ── Risk Management (Phase 6 — stubs) ────────────────────
+risk:
+  max_risk_per_trade_pct: 2.0
+  max_position_size_pct: 10.0
+  min_risk_reward_ratio: 2.0
+  max_open_positions: 5
+  max_daily_loss_pct: 5.0
+  max_drawdown_pct: 20.0
+  mandatory_stop_loss: true
+
+# ── Strategy Parameters (Phase 5 — stubs) ────────────────
+strategy:
+  primary_strategy: trendline_pullback
+  min_confirmation_candles: 1
+  ema_periods: [5, 9, 21, 50, 100, 200]
+  rsi_period: 14
+  adx_period: 14
+  atr_period: 14
