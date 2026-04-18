@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 4
+**Phase:** 5
 **Status:** ✅ Complete
-**Goal:** 5-regime multi-factor classifier (trending, range, breakout, reversal, liquidity trap)
-**Context:** `.planning/phases/04-regime-detection/04-CONTEXT.md`
-**Plans:** 1/1 complete | **Tests:** 224/224 passing (18 new)
+**Goal:** Strategy ABC, 12 candlestick patterns, trendline pullback primary strategy
+**Context:** n/a (built inline)
+**Plans:** 2/2 complete | **Tests:** 243/243 passing (19 new)
 
 ## Progress
 
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2 | Technical Indicator Engine | ✅ Complete | 4/4 |
 | 3 | Structural Analysis (S/R + Trendlines) | ✅ Complete | 3/3 |
 | 4 | Market Regime Detection | ✅ Complete | 1/1 |
-| 5 | Primary Strategy & Candlestick Patterns | ○ Pending | 0/0 |
+| 5 | Primary Strategy & Candlestick Patterns | ✅ Complete | 2/2 |
 | 6 | Risk Management Engine | ○ Pending | 0/0 |
 | 7 | Paper Trading Engine | ○ Pending | 0/0 |
 | 8 | Backtesting Engine | ○ Pending | 0/0 |
@@ -49,4 +49,4 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-18 | Paper trading capital: ₹1Cr (INR) or $100K (USD) | Init |
 
 ---
-*Last updated: 2026-04-18 after Phase 4 execution — 224 tests passing*
+*Last updated: 2026-04-18 after Phase 5 execution — 243 tests passing*
