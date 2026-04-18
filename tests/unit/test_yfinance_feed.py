@@ -67,9 +67,14 @@ class TestYFinanceFeed:
 
     def test_clamp_period(self) -> None:
         """Period clamping respects yfinance limits."""
-        assert YFinanceFeed._clamp_period("1y", "60d") == "60d"
-        assert YFinanceFeed._clamp_period("1mo", "60d") == "1mo"
-        assert YFinanceFeed._clamp_period("max", "60d") == "60d"
+        # 1y > 3mo, so clamp down
+        assert YFinanceFeed._clamp_period("1y", "3mo") == "3mo"
+        # 1mo < 3mo, no clamping needed
+        assert YFinanceFeed._clamp_period("1mo", "3mo") == "1mo"
+        # max > 1y, clamp
+        assert YFinanceFeed._clamp_period("max", "1y") == "1y"
+        # Same period, no change
+        assert YFinanceFeed._clamp_period("6mo", "6mo") == "6mo"
 
     def test_normalize_multiindex_columns(self) -> None:
         """Handle MultiIndex columns from single-ticker yfinance download."""

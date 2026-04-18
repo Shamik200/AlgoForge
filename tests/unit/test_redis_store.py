@@ -11,12 +11,13 @@ from algoforge.data.storage.redis_store import RedisStore
 
 def _make_candle(minute: int = 30, close: float = 101.0) -> OHLCV:
     """Helper to create a test candle."""
+    high = max(102.0, close + 1.0)  # Ensure high >= close
     return OHLCV(
         symbol="TEST",
         timeframe=Timeframe.M1,
         timestamp=datetime(2024, 1, 15, 9, minute, tzinfo=timezone.utc),
         open=100.0,
-        high=102.0,
+        high=high,
         low=99.0,
         close=close,
         volume=1000.0,

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
 
 from algoforge.core.constants import (
     DEFAULT_CAPITAL,
@@ -129,10 +129,31 @@ class Settings(BaseSettings):
     # Pydantic Settings configuration
     model_config = SettingsConfigDict(
         yaml_file="config/settings.yaml",
+        yaml_file_encoding="utf-8",
         env_prefix="ALGOFORGE_",
         env_nested_delimiter="__",
         extra="ignore",
     )
+
+    @classmethod
+    def settings_customise_sources(cls, settings_cls, **kwargs):
+        """Configure settings source priority: env > .env > YAML > defaults.
+
+        YAML loading is best-effort — if the file is missing or corrupt,
+        the system falls back to env vars and Pydantic defaults.
+        """
+        sources = [
+            kwargs.get("init_settings"),
+            kwargs.get("env_settings"),
+            kwargs.get("dotenv_settings"),
+        ]
+        try:
+            yaml_source = YamlConfigSettingsSource(settings_cls)
+            sources.append(yaml_source)
+        except Exception:
+            pass  # YAML file missing or unreadable — use defaults
+        sources.append(kwargs.get("file_secret_settings"))
+        return tuple(sources)
 
     # Path to the YAML file (for reference)
     CONFIG_PATH: ClassVar[Path] = Path("config/settings.yaml")

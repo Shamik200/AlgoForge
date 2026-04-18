@@ -70,7 +70,7 @@ class TestOHLCV:
 
     def test_ohlcv_is_bullish(self) -> None:
         """Bullish candle has close > open."""
-        candle = self._make_candle(open=100.0, close=105.0)
+        candle = self._make_candle(open=100.0, high=106.0, close=105.0)
         assert candle.is_bullish is True
         assert candle.is_bearish is False
 
@@ -82,7 +82,7 @@ class TestOHLCV:
 
     def test_ohlcv_body_size(self) -> None:
         """Body size is abs(close - open)."""
-        candle = self._make_candle(open=100.0, close=105.0)
+        candle = self._make_candle(open=100.0, high=106.0, close=105.0)
         assert candle.body_size == 5.0
 
     def test_ohlcv_range(self) -> None:
