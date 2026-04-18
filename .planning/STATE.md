@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 5
+**Phase:** 6
 **Status:** ✅ Complete
-**Goal:** Strategy ABC, 12 candlestick patterns, trendline pullback primary strategy
+**Goal:** Risk engine with absolute veto, position sizing, kill switches, 20 risk rules
 **Context:** n/a (built inline)
-**Plans:** 2/2 complete | **Tests:** 243/243 passing (19 new)
+**Plans:** 1/1 complete | **Tests:** 266/266 passing (23 new)
 
 ## Progress
 
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 3 | Structural Analysis (S/R + Trendlines) | ✅ Complete | 3/3 |
 | 4 | Market Regime Detection | ✅ Complete | 1/1 |
 | 5 | Primary Strategy & Candlestick Patterns | ✅ Complete | 2/2 |
-| 6 | Risk Management Engine | ○ Pending | 0/0 |
+| 6 | Risk Management Engine | ✅ Complete | 1/1 |
 | 7 | Paper Trading Engine | ○ Pending | 0/0 |
 | 8 | Backtesting Engine | ○ Pending | 0/0 |
 | 9 | Secondary Strategies — Trending & Range | ○ Pending | 0/0 |
@@ -49,4 +49,4 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-18 | Paper trading capital: ₹1Cr (INR) or $100K (USD) | Init |
 
 ---
-*Last updated: 2026-04-18 after Phase 5 execution — 243 tests passing*
+*Last updated: 2026-04-18 after Phase 6 execution — 266 tests passing*
