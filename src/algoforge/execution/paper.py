@@ -1,0 +1,351 @@
+"""Paper Trading Engine — Simulated execution environment.
+
+Models realistic execution with slippage, commissions, and latency.
+Processes signals through the risk manager, executes fills, tracks
+portfolio state and performance metrics.
+
+Requirements: PAPR-01 to PAPR-06
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+import structlog
+from pydantic import BaseModel, Field
+
+from algoforge.core.constants import Direction, Market, Timeframe
+from algoforge.core.models import Position, Signal
+from algoforge.risk.manager import RiskConfig, RiskManager
+
+logger = structlog.get_logger(__name__)
+
+
+class FillResult(BaseModel):
+    """Result of a simulated order fill."""
+
+    filled: bool = False
+    position_id: str = ""
+    fill_price: float = 0.0
+    slippage: float = 0.0
+    commission: float = 0.0
+    latency_ms: float = 0.0
+    rejection_reason: str = ""
+
+
+class TradeRecord(BaseModel):
+    """Completed trade record for performance tracking."""
+
+    id: str
+    symbol: str
+    direction: Direction
+    strategy: str
+    entry_price: float
+    exit_price: float
+    quantity: float
+    entry_time: datetime
+    exit_time: datetime
+    pnl: float
+    commission: float
+    slippage: float
+    bars_held: int = 0
+
+
+class PortfolioSnapshot(BaseModel):
+    """Point-in-time portfolio state."""
+
+    equity: float = 0.0
+    cash: float = 0.0
+    open_positions: int = 0
+    total_trades: int = 0
+    winning_trades: int = 0
+    losing_trades: int = 0
+    total_pnl: float = 0.0
+    total_commission: float = 0.0
+    max_drawdown_pct: float = 0.0
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PaperTradingEngine:
+    """Simulated trading execution engine.
+
+    Features:
+    - Realistic slippage modeling (PAPR-01)
+    - Commission/fee modeling (PAPR-02)
+    - Latency simulation (PAPR-03)
+    - Market-agnostic (PAPR-04)
+    - Integrates with RiskManager for all validations
+    - Tracks full portfolio state and trade history
+
+    Usage:
+        engine = PaperTradingEngine(
+            initial_capital=100_000,
+            market=Market.STOCKS_US,
+        )
+        fill = engine.submit_signal(signal)
+        engine.update_prices({"AAPL": 155.0})
+        engine.check_exits(current_bar=100)
+    """
+
+    # Market-specific fee structures (PAPR-02)
+    FEE_STRUCTURES: dict[Market, dict[str, float]] = {
+        Market.STOCKS_US: {"commission_per_share": 0.005, "min_commission": 1.0, "tax_rate": 0.0},
+        Market.STOCKS_INDIA: {"commission_pct": 0.0003, "stt_pct": 0.001, "gst_pct": 0.18, "min_commission": 20.0},
+        Market.CRYPTO: {"commission_pct": 0.001, "min_commission": 0.0, "tax_rate": 0.0},
+        Market.FOREX: {"spread_pips": 1.5, "commission_per_lot": 3.5, "min_commission": 0.0},
+    }
+
+    def __init__(
+        self,
+        initial_capital: float = 100_000.0,
+        market: Market = Market.STOCKS_US,
+        slippage_pct: float = 0.0005,
+        latency_ms: float = 100.0,
+        risk_config: RiskConfig | None = None,
+    ) -> None:
+        self._initial_capital = initial_capital
+        self._cash = initial_capital
+        self._market = market
+        self._slippage_pct = slippage_pct
+        self._latency_ms = latency_ms
+        self._risk_manager = RiskManager(capital=initial_capital, config=risk_config)
+        self._positions: dict[str, Position] = {}
+        self._trade_history: list[TradeRecord] = []
+        self._peak_equity = initial_capital
+        self._current_bar = 0
+        self._prices: dict[str, float] = {}
+
+    @property
+    def equity(self) -> float:
+        """Total equity = cash + sum of open position values."""
+        position_value = sum(p.market_value for p in self._positions.values())
+        return self._cash + position_value
+
+    @property
+    def open_positions(self) -> list[Position]:
+        return list(self._positions.values())
+
+    @property
+    def trade_history(self) -> list[TradeRecord]:
+        return self._trade_history
+
+    def submit_signal(
+        self,
+        signal: Signal,
+        daily_volume: float | None = None,
+    ) -> FillResult:
+        """Submit a signal for paper execution.
+
+        Steps:
+        1. Run through RiskManager validation
+        2. Apply slippage to entry price
+        3. Calculate commissions
+        4. Create position if all checks pass
+        """
+        # Risk validation (with absolute veto power)
+        risk_result = self._risk_manager.validate(
+            signal,
+            open_positions=self.open_positions,
+            daily_volume=daily_volume,
+            current_bar=self._current_bar,
+        )
+
+        if not risk_result.approved:
+            return FillResult(
+                filled=False,
+                rejection_reason="; ".join(risk_result.rejection_reasons),
+            )
+
+        # Apply slippage (PAPR-01)
+        slippage = signal.entry_price * self._slippage_pct
+        if signal.direction == Direction.LONG:
+            fill_price = signal.entry_price + slippage  # Worse fill for longs
+        else:
+            fill_price = signal.entry_price - slippage  # Worse fill for shorts
+
+        # Calculate commission (PAPR-02)
+        commission = self._calculate_commission(
+            fill_price, risk_result.position_size
+        )
+
+        # Check cash available
+        position_cost = fill_price * risk_result.position_size + commission
+        if position_cost > self._cash:
+            return FillResult(
+                filled=False,
+                rejection_reason=f"Insufficient cash: {self._cash:.2f} < {position_cost:.2f}",
+            )
+
+        # Create position
+        position_id = str(uuid.uuid4())[:8]
+        adjusted = risk_result.adjusted_signal or signal
+
+        position = Position(
+            id=position_id,
+            symbol=signal.symbol,
+            direction=signal.direction,
+            entry_price=fill_price,
+            quantity=risk_result.position_size,
+            stop_loss=adjusted.stop_loss,
+            take_profit=adjusted.take_profit,
+            strategy=signal.strategy,
+            opened_at=datetime.now(timezone.utc),
+            current_price=fill_price,
+        )
+
+        self._positions[position_id] = position
+        self._cash -= position_cost
+
+        logger.info(
+            "paper_fill",
+            position_id=position_id,
+            symbol=signal.symbol,
+            direction=signal.direction.value,
+            fill_price=round(fill_price, 4),
+            quantity=risk_result.position_size,
+            commission=round(commission, 2),
+            slippage=round(slippage, 4),
+        )
+
+        return FillResult(
+            filled=True,
+            position_id=position_id,
+            fill_price=round(fill_price, 4),
+            slippage=round(slippage, 4),
+            commission=round(commission, 2),
+            latency_ms=self._latency_ms,
+        )
+
+    def update_prices(self, prices: dict[str, float]) -> None:
+        """Update current prices and position P&L."""
+        self._prices.update(prices)
+        for pos in self._positions.values():
+            if pos.symbol in prices:
+                pos.current_price = prices[pos.symbol]
+                if pos.direction == Direction.LONG:
+                    pos.unrealized_pnl = (pos.current_price - pos.entry_price) * pos.quantity
+                else:
+                    pos.unrealized_pnl = (pos.entry_price - pos.current_price) * pos.quantity
+
+        # Track peak equity
+        if self.equity > self._peak_equity:
+            self._peak_equity = self.equity
+
+    def check_exits(self, current_bar: int = 0) -> list[TradeRecord]:
+        """Check all positions for SL/TP hits."""
+        self._current_bar = current_bar
+        closed: list[TradeRecord] = []
+        to_close: list[str] = []
+
+        for pid, pos in self._positions.items():
+            price = pos.current_price
+            hit_sl = False
+            hit_tp = False
+
+            if pos.direction == Direction.LONG:
+                hit_sl = price <= pos.stop_loss
+                hit_tp = price >= pos.take_profit
+            else:
+                hit_sl = price >= pos.stop_loss
+                hit_tp = price <= pos.take_profit
+
+            if hit_sl or hit_tp:
+                exit_price = pos.stop_loss if hit_sl else pos.take_profit
+                # Apply slippage on exit
+                slippage = exit_price * self._slippage_pct
+                if pos.direction == Direction.LONG:
+                    exit_price -= slippage  # Worse exit for longs
+                else:
+                    exit_price += slippage
+
+                commission = self._calculate_commission(exit_price, pos.quantity)
+
+                if pos.direction == Direction.LONG:
+                    pnl = (exit_price - pos.entry_price) * pos.quantity - commission
+                else:
+                    pnl = (pos.entry_price - exit_price) * pos.quantity - commission
+
+                trade = TradeRecord(
+                    id=pid,
+                    symbol=pos.symbol,
+                    direction=pos.direction,
+                    strategy=pos.strategy,
+                    entry_price=pos.entry_price,
+                    exit_price=round(exit_price, 4),
+                    quantity=pos.quantity,
+                    entry_time=pos.opened_at,
+                    exit_time=datetime.now(timezone.utc),
+                    pnl=round(pnl, 2),
+                    commission=round(commission, 2),
+                    slippage=round(slippage, 4),
+                )
+
+                self._trade_history.append(trade)
+                self._cash += exit_price * pos.quantity - commission
+                self._risk_manager.record_trade_result(pnl)
+                to_close.append(pid)
+                closed.append(trade)
+
+                logger.info(
+                    "paper_exit",
+                    position_id=pid,
+                    symbol=pos.symbol,
+                    exit_type="SL" if hit_sl else "TP",
+                    pnl=round(pnl, 2),
+                )
+
+        for pid in to_close:
+            del self._positions[pid]
+
+        return closed
+
+    def _calculate_commission(self, price: float, quantity: float) -> float:
+        """Calculate commission based on market fee structure."""
+        fees = self.FEE_STRUCTURES.get(self._market, {})
+
+        if "commission_per_share" in fees:
+            # US stocks
+            comm = max(quantity * fees["commission_per_share"], fees.get("min_commission", 0))
+        elif "commission_pct" in fees:
+            # India/Crypto
+            comm = max(price * quantity * fees["commission_pct"], fees.get("min_commission", 0))
+            if "stt_pct" in fees:
+                comm += price * quantity * fees["stt_pct"]
+        elif "spread_pips" in fees:
+            # Forex
+            comm = fees.get("commission_per_lot", 0) * (quantity / 100_000)
+        else:
+            comm = 0.0
+
+        return comm
+
+    def snapshot(self) -> PortfolioSnapshot:
+        """Get current portfolio state."""
+        wins = sum(1 for t in self._trade_history if t.pnl > 0)
+        losses = sum(1 for t in self._trade_history if t.pnl <= 0)
+        total_pnl = sum(t.pnl for t in self._trade_history)
+        total_comm = sum(t.commission for t in self._trade_history)
+        dd = (self._peak_equity - self.equity) / self._peak_equity if self._peak_equity > 0 else 0
+
+        return PortfolioSnapshot(
+            equity=round(self.equity, 2),
+            cash=round(self._cash, 2),
+            open_positions=len(self._positions),
+            total_trades=len(self._trade_history),
+            winning_trades=wins,
+            losing_trades=losses,
+            total_pnl=round(total_pnl, 2),
+            total_commission=round(total_comm, 2),
+            max_drawdown_pct=round(dd, 4),
+        )
+
+    def reset(self) -> None:
+        """Reset engine to initial state."""
+        self._cash = self._initial_capital
+        self._positions.clear()
+        self._trade_history.clear()
+        self._peak_equity = self._initial_capital
+        self._current_bar = 0
+        self._prices.clear()
