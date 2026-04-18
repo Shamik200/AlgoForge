@@ -1,0 +1,1 @@
+"""AlgoForge Structural Analysis package."""
