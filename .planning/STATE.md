@@ -9,18 +9,18 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 1
+**Phase:** 2
 **Status:** ✅ Complete
-**Goal:** Establish project scaffolding, configuration system, data pipeline, and database
-**Context:** `.planning/phases/01-foundation-data/01-CONTEXT.md`
-**Plans:** 4/4 complete | **Tests:** 79/79 passing
+**Goal:** Implement all 14 technical indicators with configurable parameters
+**Context:** `.planning/phases/02-technical-indicators/02-CONTEXT.md`
+**Plans:** 4/4 complete | **Tests:** 175/175 passing (96 new)
 
 ## Progress
 
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
 | 1 | Foundation & Data Infrastructure | ✅ Complete | 4/4 |
-| 2 | Technical Indicator Engine | ○ Pending | 0/0 |
+| 2 | Technical Indicator Engine | ✅ Complete | 4/4 |
 | 3 | Structural Analysis (S/R + Trendlines) | ○ Pending | 0/0 |
 | 4 | Market Regime Detection | ○ Pending | 0/0 |
 | 5 | Primary Strategy & Candlestick Patterns | ○ Pending | 0/0 |
@@ -49,4 +49,4 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-18 | Paper trading capital: ₹1Cr (INR) or $100K (USD) | Init |
 
 ---
-*Last updated: 2026-04-18 after Phase 1 execution — 79 tests passing*
+*Last updated: 2026-04-18 after Phase 2 execution — 175 tests passing*
