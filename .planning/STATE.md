@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 7 → ✅ COMPLETE
-**Status:** Executed — Mean Reversion Signal Family
-**Goal:** Implement the Mean Reversion signal family using VWAP z-scores, Bollinger %B extremes, and strict RSI divergence.
-**Context:** Outputs standard `SignalResult` (z-score [-1, 1]). Guarded by Regime probabilities and Momentum exhaustion.
-**Plans:** executed inline | **Tests:** 486/486 passing
+**Phase:** 8 → ✅ COMPLETE
+**Status:** Executed — Breakout / Volatility Signal Family
+**Goal:** Implement Volatility Squeeze (Bollinger inside Keltner), Donchian volume breakouts, and ORB with stateless failure handling.
+**Context:** Outputs standard `SignalResult` (z-score [-1, 1]). Guarded by Regime probabilities (Trending > 50%).
+**Plans:** executed inline | **Tests:** 490/490 passing
 
 ## Progress
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 5 | HMM Probabilistic Regime Detector | ✅ Complete (2026-04-19) | inline |
 | 6 | Signal Family: Momentum | ✅ Complete (2026-04-19) | inline |
 | 7 | Signal Family: Mean Reversion | ✅ Complete (2026-04-19) | inline |
-| 8 | Signal Family: Breakout / Volatility | ⬜ Not started | 0 |
+| 8 | Signal Family: Breakout / Volatility | ✅ Complete (2026-04-19) | inline |
 | 9 | Signal Family: Structural Confluence | ⬜ Not started | 0 |
 | 10 | Risk Management Engine | ⬜ Not started | 0 |
 | 11 | Signal Combination & Conviction Framework | ⬜ Not started | 0 |
@@ -86,6 +86,8 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-19 | Strict structural RSI divergence matching using Phase 4 swing logic | 7 |
 | 2026-04-19 | Mean Reversion HMM regime guard (>0.40 probability to activate) | 7 |
 | 2026-04-19 | Anti-trend steamroller guard (disables if momentum > 0.80) | 7 |
+| 2026-04-19 | Stateless Breakout Failure detection pattern (prev_close > high AND close < high) | 8 |
+| 2026-04-19 | TTM Squeeze Volatility detection (Bollinger Bands inside Keltner Channels) | 8 |
 
 ---
-*Last updated: 2026-04-19 — Phase 7 complete — 486 tests — advancing to Phase 8*
+*Last updated: 2026-04-19 — Phase 8 complete — 490 tests — advancing to Phase 9*

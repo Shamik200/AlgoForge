@@ -174,3 +174,33 @@ def roc_calc(data: np.ndarray, period: int) -> np.ndarray:
     result = np.full(n, np.nan)
     result[period:] = (data[period:] - data[:-period]) / data[:-period]
     return result
+
+
+def sma_calc(data: np.ndarray, period: int) -> np.ndarray:
+    """Calculate Simple Moving Average (SMA)."""
+    n = len(data)
+    result = np.full(n, np.nan)
+    if n < period:
+        return result
+        
+    window = np.ones(period) / period
+    result[period-1:] = np.convolve(data, window, mode='valid')
+    return result
+
+
+def atr_calc(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int) -> np.ndarray:
+    """Calculate Average True Range (ATR)."""
+    tr = true_range(highs, lows, closes)
+    # The first ATR is a simple average of the first 'period' TR values.
+    # Subsequent values use a smoothing formula similar to Wilder's Smoothing.
+    n = len(tr)
+    atr = np.full(n, np.nan)
+    
+    if n < period:
+        return atr
+        
+    atr[period-1] = np.mean(tr[:period])
+    for i in range(period, n):
+        atr[i] = (atr[i-1] * (period - 1) + tr[i]) / period
+        
+    return atr
