@@ -3,73 +3,70 @@
 > **Audit trail only.** Do not use as input to planning, research, or execution agents.
 > Decisions are captured in CONTEXT.md — this log preserves the alternatives considered.
 
-**Date:** 2026-04-18
+**Date:** 2026-04-19
 **Phase:** 01-foundation-data
-**Areas discussed:** Data source, Database & dev environment, Config structure, Historical data strategy
+**Areas discussed:** Data Storage Strategy, Data Feed Adapters, Market-Specific Config Structure, Existing Code Treatment
 
 ---
 
-## Data Source for Development
+## Data Storage Strategy
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| yfinance (free) | Free Yahoo Finance API, no API key, REST-based, good for development | ✓ |
-| Paid API (Alpha Vantage, Polygon) | Higher quality, rate limits, requires API key | |
-| WebSocket streaming (Binance) | Real-time, but crypto-only, requires account | |
+| Redis + TimescaleDB | Redis as real-time cache, TimescaleDB as persistent historical store. Institutional standard hot/cold separation. | ✓ |
+| Redis + Parquet Files | Redis as cache, Parquet files on disk for historical data. Simpler but no real-time queries. | |
+| Redis Only | Keep current approach. Simple but limited for multi-year backtesting. | |
 
-**User's choice:** yfinance — free, no API key needed
-**Notes:** User explicitly wants free API for development. Build adapter interface for future paid feeds.
+**User's choice:** Redis + TimescaleDB
+**Notes:** User selected the recommended institutional-standard approach without hesitation.
 
 ---
 
-## Database & Dev Environment
+## Data Feed Adapters
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Redis (in-memory) | Sub-millisecond reads, fastest option, local install | ✓ |
-| TimescaleDB (persistent) | SQL-based time-series, better for large historical data | |
-| Redis + TimescaleDB (hybrid) | Redis for real-time, TimescaleDB for historical | |
+| YFinance only | Keep what works, add others later. | |
+| YFinance + one real-time | Add Polygon.io or Binance alongside YFinance. | |
+| Full multi-source | YFinance + Polygon.io + CoinGecko + Alpha Vantage. | |
 
-**User's choice:** Redis — "fastest database like redis, Local Dev Env"
-**Notes:** User prioritizes speed. TimescaleDB deferred to later phases when large-scale persistence is needed. Local dev environment, no Docker Compose.
+**User's choice:** Custom — "I want it to include all the possible stocks, forex and crypto so you can consider one or more free API source as per that"
+**Notes:** User wants maximum asset class coverage with free APIs. Resolved to: YFinance (stocks US/India) + Binance (crypto real-time WebSocket) + Alpha Vantage (forex). All free, modular adapter pattern for future expansion.
 
 ---
 
-## Config File Structure
+## Market-Specific Config Structure
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Single settings.yaml | Everything in one file, simple, easy to find | ✓ |
-| Split files (settings + strategies + risk + markets) | More organized, harder to find things | |
-| TOML instead of YAML | Python-native (pyproject.toml style), less common in trading | |
+| Full market configs | Separate YAML per market with trading hours, fees, lot sizes, symbol format, universe. Plus timeframe mode configs. | ✓ |
+| Lightweight configs | Just timeframe mappings and symbol prefixes per market. | |
+| Single unified config | One settings.yaml with nested market sections. | |
 
-**User's choice:** Single settings.yaml
-**Notes:** User wants simplicity — one file for everything.
+**User's choice:** Full market configs
+**Notes:** Selected the most detailed option — each market gets its own comprehensive YAML.
 
 ---
 
-## Historical Data Bootstrap
+## Existing Code Treatment
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Real-time focus, minimal historical | Collect only what's needed for current timeframe mode | ✓ |
-| Full historical download (1+ year) | More data for backtesting from day 1 | |
-| Incremental collection over time | Start thin, accumulate as system runs | |
+| Incremental upgrade | Keep v1 code, refactor module by module as each phase touches it. 378 tests keep passing. | ✓ |
+| Clean slate | Delete src/algoforge/, rebuild from scratch. Lose all working code. | |
+| Parallel build | New src/algoforge_v2/ alongside existing. Zero risk but confusion potential. | |
 
-**User's choice:** Agent's discretion — per timeframe mode (1Y/1M for investment, 1D/1H for trading)
-**Notes:** User said "we only need real time data" — historical is secondary, collected as needed for configured timeframe mode. ML/backtesting data needs will be addressed in those phases.
-
----
+**User's choice:** Incremental upgrade
+**Notes:** Lower risk approach — upgrade what's touched, keep everything else working.
 
 ## Agent's Discretion
 
-- Redis data structure design
-- Resampling implementation approach
-- Test instrument selection
-- Error handling patterns
+- TimescaleDB client library choice (asyncpg preferred)
+- Binance/Alpha Vantage adapter implementation details
+- Redis cache TTL and eviction strategy
+- Data normalization pipeline internals
+- TimescaleDB schema design
 
 ## Deferred Ideas
 
-- TimescaleDB for persistent storage (future phase)
-- Docker Compose orchestration (Phase 15)
-- WebSocket streaming feeds (when broker APIs provided)
+None — discussion stayed within phase scope.

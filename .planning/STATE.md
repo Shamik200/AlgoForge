@@ -1,4 +1,4 @@
-# State: AlgoForge
+# State: AlgoForge v2
 
 ## Project Reference
 
@@ -9,44 +9,56 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 15
-**Status:** ✅ Complete — ALL PHASES DONE
-**Goal:** v1 Milestone complete — full 3-module pipeline with 6 strategies, 5 regimes, risk veto
-**Context:** n/a
-**Plans:** All complete | **Tests:** 352/352 passing
+**Phase:** 1
+**Status:** Not planned yet
+**Goal:** Project scaffolding, async config, data pipeline, TimescaleDB, multi-timeframe resampling
+**Context:** Full roadmap rewrite — 22 phases aligned with refined trading system prompt (5 signal families, HMM regime, signal combination)
+**Plans:** 0 | **Tests:** 378/378 passing (existing v1 code)
 
 ## Progress
 
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
-| 1 | Foundation & Data Infrastructure | ✅ Complete | 4/4 |
-| 2 | Technical Indicator Engine | ✅ Complete | 4/4 |
-| 3 | Structural Analysis (S/R + Trendlines) | ✅ Complete | 3/3 |
-| 4 | Market Regime Detection | ✅ Complete | 1/1 |
-| 5 | Primary Strategy & Candlestick Patterns | ✅ Complete | 2/2 |
-| 6 | Risk Management Engine | ✅ Complete | 1/1 |
-| 7 | Paper Trading Engine | ✅ Complete | 1/1 |
-| 8 | Backtesting Engine | ✅ Complete | 1/1 |
-| 9 | Secondary Strategies — Trending & Range | ✅ Complete | 1/1 |
-| 10 | Secondary Strategies — Breakout/Reversal/Trap | ✅ Complete | 1/1 |
-| 11 | Dual Timeframe Mode Integration | ✅ Complete | 1/1 |
-| 12 | Fundamental Analysis Module | ✅ Complete | 1/1 |
-| 13 | ML/DL/RL Model Integration | ✅ Complete | 1/1 |
-| 14 | Dashboard & Monitoring | ✅ Complete | 1/1 |
-| 15 | Live Trading Bridge & Production | ✅ Complete | 1/1 |
+| 1 | Foundation & Data Infrastructure | ⬜ Not started | 0 |
+| 2 | Async Event Bus & Message Architecture | ⬜ Not started | 0 |
+| 3 | Orthogonal Indicator Engine (7 Indicators) | ⬜ Not started | 0 |
+| 4 | Structural Confluence Detection | ⬜ Not started | 0 |
+| 5 | HMM Probabilistic Regime Detector | ⬜ Not started | 0 |
+| 6 | Signal Family: Momentum | ⬜ Not started | 0 |
+| 7 | Signal Family: Mean Reversion | ⬜ Not started | 0 |
+| 8 | Signal Family: Breakout / Volatility | ⬜ Not started | 0 |
+| 9 | Signal Family: Structural Confluence | ⬜ Not started | 0 |
+| 10 | Risk Management Engine | ⬜ Not started | 0 |
+| 11 | Signal Combination & Conviction Framework | ⬜ Not started | 0 |
+| 12 | Multi-Target SL/TP & Partial Exits | ⬜ Not started | 0 |
+| 13 | Order Management System (OMS) | ⬜ Not started | 0 |
+| 14 | Paper Trading Engine | ⬜ Not started | 0 |
+| 15 | Backtesting Engine | ⬜ Not started | 0 |
+| 16 | Alpha Decay Monitoring System | ⬜ Not started | 0 |
+| 17 | Signal Family: Microstructure / Order Flow | ⬜ Not started | 0 |
+| 18 | Pairs & Cointegration Trading | ⬜ Not started | 0 |
+| 19 | Fundamental Analysis Module (LangGraph) | ⬜ Not started | 0 |
+| 20 | ML/DL/RL Pipeline | ⬜ Not started | 0 |
+| 21 | Dashboard & Monitoring | ⬜ Not started | 0 |
+| 22 | Live Trading Bridge & Production | ⬜ Not started | 0 |
 
 ## Decisions Log
 
 | Date | Decision | Phase |
 |------|----------|-------|
-| 2026-04-18 | Market-agnostic from day 1 (stocks/crypto/forex via config) | Init |
-| 2026-04-18 | Next.js for dashboard (fastest + best-looking UI) | Init |
-| 2026-04-18 | Event-driven backtesting only (no vectorized — prevents lookahead bias) | Init |
-| 2026-04-18 | Risk management has absolute veto power over all signals | Init |
-| 2026-04-18 | Primary strategy (trendline-pullback) must generate >50% of trades | Init |
-| 2026-04-18 | Paper trading before live trading (mandatory validation) | Init |
-| 2026-04-18 | Broker API deferred — adapter interfaces only for v1 | Init |
-| 2026-04-18 | Paper trading capital: ₹1Cr (INR) or $100K (USD) | Init |
+| 2026-04-19 | Full roadmap rewrite: 31-strategy → 5-signal-family architecture | All |
+| 2026-04-19 | HMM (4-state) replaces ADX-threshold regime detection | 5 |
+| 2026-04-19 | 7 orthogonal indicators (zero redundancy) replace 14 indicators | 3 |
+| 2026-04-19 | KAMA replaces 6 static EMAs as primary trend indicator | 3 |
+| 2026-04-19 | Signal combination framework with decorrelation is THE core edge | 11 |
+| 2026-04-19 | Alpha decay monitoring from day one — no strategy runs unmonitored | 16 |
+| 2026-04-19 | Async event bus (asyncio + Redis Streams) is the architectural backbone | 2 |
+| 2026-04-19 | Multi-target SL/TP: TP1 (50% at 1.5R), TP2 (30% at 2.5R), TP3 (20% trailing) | 12 |
+| 2026-04-19 | Market-agnostic from day 1 (stocks/crypto/forex via config) | 1 |
+| 2026-04-19 | Risk management has absolute veto power over all signals | 10 |
+| 2026-04-19 | Event-driven backtesting only (no vectorized — prevents lookahead bias) | 15 |
+| 2026-04-19 | Paper trading before live trading (mandatory validation) | 14 |
+| 2026-04-19 | Broker API deferred — adapter interfaces only for v2 | 22 |
 
 ---
-*Last updated: 2026-04-19 after Phase 15 execution — 352 tests passing — v1 MILESTONE COMPLETE*
+*Last updated: 2026-04-19 — v2 roadmap created — 22 phases — 150 success criteria*
