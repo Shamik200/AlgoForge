@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-04-18)
 
 **Core value:** Risk management is supreme — no trade executes without passing every risk check.
-**Current focus:** Phase 2 — Async Event Bus & Message Architecture
+**Current focus:** Phase 3 — Orthogonal Indicator Engine
 
 ## Current Phase
 
-**Phase:** 1 → ✅ COMPLETE
-**Status:** Executed — all 4 plans across 3 waves
-**Goal:** Project scaffolding, async config, data pipeline, TimescaleDB, multi-timeframe resampling
-**Context:** Full roadmap rewrite — 22 phases aligned with refined trading system prompt (5 signal families, HMM regime, signal combination)
-**Plans:** 4/4 complete | **Tests:** 427/427 passing
+**Phase:** 2 → ✅ COMPLETE
+**Status:** Executed — Pydantic events, hybrid transport, worker pool, correlation IDs
+**Goal:** Build the asyncio event-driven backbone with Redis Streams pub/sub, correlation IDs, and async data pipeline
+**Context:** Full roadmap rewrite — 22 phases aligned with refined trading system prompt
+**Plans:** executed inline | **Tests:** 467/467 passing
 
 ## Progress
 
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
 | 1 | Foundation & Data Infrastructure | ✅ Complete (2026-04-19) | 4/4 |
-| 2 | Async Event Bus & Message Architecture | ⬜ Not started | 0 |
+| 2 | Async Event Bus & Message Architecture | ✅ Complete (2026-04-19) | inline |
 | 3 | Orthogonal Indicator Engine (7 Indicators) | ⬜ Not started | 0 |
 | 4 | Structural Confluence Detection | ⬜ Not started | 0 |
 | 5 | HMM Probabilistic Regime Detector | ⬜ Not started | 0 |
@@ -64,6 +64,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-19 | BaseFeed ABC + FeedFactory for pluggable provider selection | 1 |
 | 2026-04-19 | Per-market YAML configs (stocks_india, stocks_us, crypto, forex) | 1 |
 | 2026-04-19 | Intraday/Swing timeframe mode configs | 1 |
+| 2026-04-19 | Hybrid event transport: asyncio.Queue (hot) + Redis Streams (durable) | 2 |
+| 2026-04-19 | Hierarchical correlation IDs: event_id + parent_id + correlation_id | 2 |
+| 2026-04-19 | Worker pool (20 workers) for 100+ instrument concurrency | 2 |
+| 2026-04-19 | Event types migrated from dataclass to Pydantic BaseModel | 2 |
+| 2026-04-19 | FillEvent added for order lifecycle completion | 2 |
 
 ---
-*Last updated: 2026-04-19 — Phase 1 complete — 427 tests — advancing to Phase 2*
+*Last updated: 2026-04-19 — Phase 2 complete — 467 tests — advancing to Phase 3*
