@@ -5,15 +5,15 @@
 See: .planning/PROJECT.md (updated 2026-04-18)
 
 **Core value:** Risk management is supreme — no trade executes without passing every risk check.
-**Current focus:** Phase 4 — Structural Confluence Detection
+**Current focus:** Phase 5 — HMM Probabilistic Regime Detector
 
 ## Current Phase
 
-**Phase:** 3 → ✅ COMPLETE
-**Status:** Executed — KAMA, ROC, Two-Tier Indicator Engine
-**Goal:** Restructure the existing 14-indicator engine into a 7 orthogonal indicator engine (zero redundancy) plus 3 optional supporting tools.
-**Context:** KAMA and ROC implemented in NumPy. Two-tier engine architecture introduced.
-**Plans:** executed inline | **Tests:** 469/469 passing
+**Phase:** 4 → ✅ COMPLETE
+**Status:** Executed — Structural Confluence Engine, Swings Detection
+**Goal:** Build objective, data-driven S/R detection using volume profile, swing point clustering, and dynamic MAs.
+**Context:** Pydantic models for PriceLevel and ConfluenceZone. `detect_swings` and `cluster_swings` implemented with ATR-based clustering.
+**Plans:** executed inline | **Tests:** 474/474 passing
 
 ## Progress
 
@@ -22,7 +22,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 1 | Foundation & Data Infrastructure | ✅ Complete (2026-04-19) | 4/4 |
 | 2 | Async Event Bus & Message Architecture | ✅ Complete (2026-04-19) | inline |
 | 3 | Orthogonal Indicator Engine (7 Indicators) | ✅ Complete (2026-04-19) | inline |
-| 4 | Structural Confluence Detection | ⬜ Not started | 0 |
+| 4 | Structural Confluence Detection | ✅ Complete (2026-04-19) | inline |
 | 5 | HMM Probabilistic Regime Detector | ⬜ Not started | 0 |
 | 6 | Signal Family: Momentum | ⬜ Not started | 0 |
 | 7 | Signal Family: Mean Reversion | ⬜ Not started | 0 |
@@ -74,5 +74,9 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-19 | Pure NumPy KAMA and ROC indicator implementations | 3 |
 | 2026-04-19 | Unlimited in-memory caching granularity maintained | 3 |
 
+| 2026-04-19 | Structural models (PriceLevel, ConfluenceZone) | 4 |
+| 2026-04-19 | Swing point detection and ATR-based clustering | 4 |
+| 2026-04-19 | Structural Confluence Engine (aggregating MAs, POC, Swings) | 4 |
+
 ---
-*Last updated: 2026-04-19 — Phase 3 complete — 469 tests — advancing to Phase 4*
+*Last updated: 2026-04-19 — Phase 4 complete — 474 tests — advancing to Phase 5*
