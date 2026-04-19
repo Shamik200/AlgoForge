@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-04-18)
 
 **Core value:** Risk management is supreme — no trade executes without passing every risk check.
-**Current focus:** Phase 1 — Foundation & Data Infrastructure
+**Current focus:** Phase 2 — Async Event Bus & Message Architecture
 
 ## Current Phase
 
-**Phase:** 1
-**Status:** Not planned yet
+**Phase:** 1 → ✅ COMPLETE
+**Status:** Executed — all 4 plans across 3 waves
 **Goal:** Project scaffolding, async config, data pipeline, TimescaleDB, multi-timeframe resampling
 **Context:** Full roadmap rewrite — 22 phases aligned with refined trading system prompt (5 signal families, HMM regime, signal combination)
-**Plans:** 0 | **Tests:** 378/378 passing (existing v1 code)
+**Plans:** 4/4 complete | **Tests:** 427/427 passing
 
 ## Progress
 
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
-| 1 | Foundation & Data Infrastructure | ⬜ Not started | 0 |
+| 1 | Foundation & Data Infrastructure | ✅ Complete (2026-04-19) | 4/4 |
 | 2 | Async Event Bus & Message Architecture | ⬜ Not started | 0 |
 | 3 | Orthogonal Indicator Engine (7 Indicators) | ⬜ Not started | 0 |
 | 4 | Structural Confluence Detection | ⬜ Not started | 0 |
@@ -59,6 +59,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-19 | Event-driven backtesting only (no vectorized — prevents lookahead bias) | 15 |
 | 2026-04-19 | Paper trading before live trading (mandatory validation) | 14 |
 | 2026-04-19 | Broker API deferred — adapter interfaces only for v2 | 22 |
+| 2026-04-19 | TimescaleDB + Redis dual storage (hot/cold) | 1 |
+| 2026-04-19 | YFinance (universal) + Binance (crypto) + AlphaVantage (forex) feed adapters | 1 |
+| 2026-04-19 | BaseFeed ABC + FeedFactory for pluggable provider selection | 1 |
+| 2026-04-19 | Per-market YAML configs (stocks_india, stocks_us, crypto, forex) | 1 |
+| 2026-04-19 | Intraday/Swing timeframe mode configs | 1 |
 
 ---
-*Last updated: 2026-04-19 — v2 roadmap created — 22 phases — 150 success criteria*
+*Last updated: 2026-04-19 — Phase 1 complete — 427 tests — advancing to Phase 2*
