@@ -51,6 +51,16 @@ alphavantage:
   base_url: https://www.alphavantage.co/query
   rate_limit_per_minute: 25
 
+event_bus:
+  max_queue_size: 10000
+  enable_streams: true
+  stream_max_len: 100000
+
+worker_pool:
+  pool_size: 20
+  max_queue_size: 10000
+  backpressure_threshold: 5000
+
 logging:
   level: INFO
   format: json

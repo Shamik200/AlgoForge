@@ -67,6 +67,22 @@ class AlphaVantageConfig(BaseModel):
     rate_limit_per_minute: int = 25
 
 
+class EventBusConfig(BaseModel):
+    """Event bus settings — queue sizes and Redis Streams configuration."""
+
+    max_queue_size: int = 10000
+    enable_streams: bool = True
+    stream_max_len: int = 100000
+
+
+class WorkerPoolConfig(BaseModel):
+    """Worker pool settings for concurrent instrument processing."""
+
+    pool_size: int = 20
+    max_queue_size: int = 10000
+    backpressure_threshold: int = 5000
+
+
 class DataFeedConfig(BaseModel):
     """Data feed settings — which provider, symbols, and timeframes to ingest."""
 
@@ -156,6 +172,8 @@ class Settings(BaseSettings):
     data_feed: DataFeedConfig = DataFeedConfig()
     binance: BinanceConfig = BinanceConfig()
     alphavantage: AlphaVantageConfig = AlphaVantageConfig()
+    event_bus: EventBusConfig = EventBusConfig()
+    worker_pool: WorkerPoolConfig = WorkerPoolConfig()
     logging: LoggingConfig = LoggingConfig()
     risk: RiskConfig = RiskConfig()
     strategy: StrategyConfig = StrategyConfig()

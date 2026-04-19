@@ -43,7 +43,7 @@ async def main() -> None:
     event_bus = EventBus()
     feed = YFinanceFeed()
     store = RedisStore()
-    pipeline = DataPipeline(feed=feed, store=store, event_bus=event_bus)
+    pipeline = DataPipeline(feed=feed, cache=store, event_bus=event_bus)
 
     # 3. Setup graceful shutdown
     shutdown_event = asyncio.Event()
@@ -75,7 +75,7 @@ async def main() -> None:
 
         if not health["pipeline"]:
             logger.error("algoforge.health_failed", health=health)
-            print("\n⚠ Pipeline health check failed. Check Redis connection.")
+            print("\n[WARN] Pipeline health check failed. Check Redis connection.")
             print(f"  Redis: {settings.redis.host}:{settings.redis.port}")
             return
 
@@ -86,13 +86,13 @@ async def main() -> None:
             logger.info("algoforge.backfill.result", symbol=sym, candles=count)
 
         total = sum(results.values())
-        print(f"\n✓ Backfilled {total:,} candles across {len(results)} symbols")
+        print(f"\n[OK] Backfilled {total:,} candles across {len(results)} symbols")
 
         # 7. Start event bus and polling loop concurrently
         event_bus_task = asyncio.create_task(event_bus.start())
         polling_task = asyncio.create_task(pipeline.run_polling_loop())
 
-        print(f"✓ Polling every {settings.data_feed.poll_interval_seconds}s")
+        print(f"[OK] Polling every {settings.data_feed.poll_interval_seconds}s")
         print("  Press Ctrl+C to stop\n")
 
         # 8. Wait for shutdown signal
@@ -112,7 +112,7 @@ async def main() -> None:
             events_published=event_bus.stats["published"],
             events_dispatched=event_bus.stats["dispatched"],
         )
-        print("\n✓ AlgoForge stopped gracefully")
+        print("\n[OK] AlgoForge stopped gracefully")
 
 
 if __name__ == "__main__":
