@@ -93,6 +93,33 @@ class OHLCV(BaseModel):
         """Mid-price of the candle."""
         return (self.high + self.low) / 2
 
+    def to_timescale_row(self) -> tuple:
+        """Convert to a tuple for TimescaleDB INSERT."""
+        return (
+            self.timestamp,
+            self.symbol,
+            self.timeframe.value,
+            self.open,
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+        )
+
+    @classmethod
+    def from_timescale_row(cls, row: dict) -> "OHLCV":
+        """Create OHLCV from a TimescaleDB row dict."""
+        return cls(
+            symbol=row["symbol"],
+            timeframe=Timeframe(row["timeframe"]),
+            timestamp=row["timestamp"],
+            open=row["open"],
+            high=row["high"],
+            low=row["low"],
+            close=row["close"],
+            volume=row["volume"],
+        )
+
 
 class OHLCVSeries(BaseModel):
     """Ordered collection of OHLCV candles for a single symbol/timeframe.

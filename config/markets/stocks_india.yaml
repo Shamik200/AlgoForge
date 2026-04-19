@@ -1,0 +1,32 @@
+market: stocks_india
+currency: INR
+capital: 10000000  # ₹1 Crore
+trading_hours:
+  timezone: Asia/Kolkata
+  open: "09:15"
+  close: "15:30"
+  pre_market: "09:00"
+  post_market: "15:40"
+fees:
+  brokerage_pct: 0.03
+  stt_pct: 0.1
+  exchange_pct: 0.00345
+  gst_pct: 18.0
+  stamp_duty_pct: 0.015
+symbols:
+  default_universe:
+    - RELIANCE.NS
+    - TCS.NS
+    - HDFCBANK.NS
+    - INFY.NS
+    - ICICIBANK.NS
+    - HINDUNILVR.NS
+    - ITC.NS
+    - SBIN.NS
+    - BHARTIARTL.NS
+    - KOTAKBANK.NS
+lot_sizes:
+  default: 1
+tick_size: 0.05
+symbol_format: "{symbol}.NS"
+available_timeframes: [1m, 5m, 15m, 30m, 1h, 1d, 1wk, 1mo]

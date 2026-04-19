@@ -1,0 +1,17 @@
+mode: intraday
+description: "Intraday trading — 1min execution, 15min-1h hold"
+timeframe_layers:
+  structure:
+    timeframes: [1d, 1h]
+    purpose: "S/R detection, major levels"
+  trend:
+    timeframes: [15m, 5m]
+    purpose: "Trendline construction, trend direction"
+  execution:
+    timeframe: 1m
+    purpose: "Entry/exit signals, pattern recognition"
+hold_duration:
+  min_minutes: 15
+  max_minutes: 60
+  time_stop_minutes: 45
+default_symbols_count: 10

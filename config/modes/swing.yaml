@@ -1,0 +1,17 @@
+mode: swing
+description: "Swing/Investment — 1H/4H execution, 1week-1month hold"
+timeframe_layers:
+  structure:
+    timeframes: [1mo, 1wk]
+    purpose: "Major S/R, long-term levels"
+  trend:
+    timeframes: [1wk, 1d]
+    purpose: "Primary trend direction"
+  execution:
+    timeframe: 1h
+    purpose: "Entry/exit timing"
+hold_duration:
+  min_days: 7
+  max_days: 30
+  time_stop_days: 5
+default_symbols_count: 20

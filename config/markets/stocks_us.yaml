@@ -1,0 +1,30 @@
+market: stocks_us
+currency: USD
+capital: 100000
+trading_hours:
+  timezone: America/New_York
+  open: "09:30"
+  close: "16:00"
+  pre_market: "04:00"
+  post_market: "20:00"
+fees:
+  commission_per_share: 0.0
+  sec_fee_pct: 0.000008
+  taf_per_share: 0.000166
+symbols:
+  default_universe:
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - TSLA
+    - NVDA
+    - META
+    - JPM
+    - V
+    - JNJ
+lot_sizes:
+  default: 1
+tick_size: 0.01
+symbol_format: "{symbol}"
+available_timeframes: [1m, 5m, 15m, 30m, 1h, 4h, 1d, 1wk, 1mo]

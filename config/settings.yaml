@@ -1,4 +1,4 @@
-# AlgoForge Configuration
+# AlgoForge Configuration v0.2.0
 # Override any value with env vars: ALGOFORGE_<SECTION>__<KEY>
 
 market:
@@ -15,6 +15,16 @@ redis:
   max_connections: 20
   socket_timeout: 5.0
 
+timescaledb:
+  host: localhost
+  port: 5432
+  database: algoforge
+  user: algoforge
+  password: ""
+  min_connections: 5
+  max_connections: 20
+  ssl: false
+
 data_feed:
   provider: yfinance
   symbols:
@@ -28,6 +38,18 @@ data_feed:
   poll_interval_seconds: 60
   max_retries: 3
   retry_delay_seconds: 2.0
+
+binance:
+  base_url: https://api.binance.com
+  ws_url: wss://stream.binance.com:9443/ws
+  api_key: null
+  api_secret: null
+  rate_limit_per_minute: 1200
+
+alphavantage:
+  api_key: ""
+  base_url: https://www.alphavantage.co/query
+  rate_limit_per_minute: 25
 
 logging:
   level: INFO

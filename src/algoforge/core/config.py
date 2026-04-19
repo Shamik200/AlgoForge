@@ -36,6 +36,37 @@ class RedisConfig(BaseModel):
     socket_timeout: float = 5.0
 
 
+class TimescaleDBConfig(BaseModel):
+    """TimescaleDB (PostgreSQL) connection settings for persistent OHLCV storage."""
+
+    host: str = "localhost"
+    port: int = 5432
+    database: str = "algoforge"
+    user: str = "algoforge"
+    password: str = ""
+    min_connections: int = 5
+    max_connections: int = 20
+    ssl: bool = False
+
+
+class BinanceConfig(BaseModel):
+    """Binance market data feed settings — crypto real-time WebSocket."""
+
+    base_url: str = "https://api.binance.com"
+    ws_url: str = "wss://stream.binance.com:9443/ws"
+    api_key: str | None = None
+    api_secret: str | None = None
+    rate_limit_per_minute: int = 1200
+
+
+class AlphaVantageConfig(BaseModel):
+    """Alpha Vantage market data feed settings — forex REST API."""
+
+    api_key: str = ""
+    base_url: str = "https://www.alphavantage.co/query"
+    rate_limit_per_minute: int = 25
+
+
 class DataFeedConfig(BaseModel):
     """Data feed settings — which provider, symbols, and timeframes to ingest."""
 
@@ -118,10 +149,13 @@ class Settings(BaseSettings):
         print(settings.market.selected_market)
     """
 
-    version: str = "0.1.0"
+    version: str = "0.2.0"
     market: MarketConfig = MarketConfig()
     redis: RedisConfig = RedisConfig()
+    timescaledb: TimescaleDBConfig = TimescaleDBConfig()
     data_feed: DataFeedConfig = DataFeedConfig()
+    binance: BinanceConfig = BinanceConfig()
+    alphavantage: AlphaVantageConfig = AlphaVantageConfig()
     logging: LoggingConfig = LoggingConfig()
     risk: RiskConfig = RiskConfig()
     strategy: StrategyConfig = StrategyConfig()
