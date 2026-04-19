@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 7
+**Phase:** 10
 **Status:** ✅ Complete
-**Goal:** Paper trading engine with slippage, commissions, latency, portfolio tracking
+**Goal:** Backtesting engine + all 5 secondary strategies (6 total strategies covering all 5 regimes)
 **Context:** n/a (built inline)
-**Plans:** 1/1 complete | **Tests:** 286/286 passing (20 new)
+**Plans:** 3/3 complete | **Tests:** 322/322 passing (36 new)
 
 ## Progress
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 5 | Primary Strategy & Candlestick Patterns | ✅ Complete | 2/2 |
 | 6 | Risk Management Engine | ✅ Complete | 1/1 |
 | 7 | Paper Trading Engine | ✅ Complete | 1/1 |
-| 8 | Backtesting Engine | ○ Pending | 0/0 |
-| 9 | Secondary Strategies — Trending & Range | ○ Pending | 0/0 |
-| 10 | Secondary Strategies — Breakout/Reversal/Trap | ○ Pending | 0/0 |
+| 8 | Backtesting Engine | ✅ Complete | 1/1 |
+| 9 | Secondary Strategies — Trending & Range | ✅ Complete | 1/1 |
+| 10 | Secondary Strategies — Breakout/Reversal/Trap | ✅ Complete | 1/1 |
 | 11 | Dual Timeframe Mode Integration | ○ Pending | 0/0 |
 | 12 | Fundamental Analysis Module | ○ Pending | 0/0 |
 | 13 | ML/DL/RL Model Integration | ○ Pending | 0/0 |
@@ -49,4 +49,4 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-18 | Paper trading capital: ₹1Cr (INR) or $100K (USD) | Init |
 
 ---
-*Last updated: 2026-04-18 after Phase 7 execution — 286 tests passing*
+*Last updated: 2026-04-18 after Phase 10 execution — 322 tests passing*
