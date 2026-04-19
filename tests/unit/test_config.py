@@ -16,7 +16,7 @@ class TestDefaultSettings:
     def test_default_settings_load(self) -> None:
         """Settings() creates with all defaults — no YAML required."""
         settings = Settings()
-        assert settings.version == "0.1.0"
+        assert settings.version == "0.2.0"
         assert settings.market is not None
         assert settings.redis is not None
         assert settings.data_feed is not None

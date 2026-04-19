@@ -77,10 +77,18 @@ class TestPaperTradingEngine:
         assert result.commission > 0
 
     def test_latency_simulation(self) -> None:
-        """PAPR-03: Latency value returned."""
-        engine = PaperTradingEngine(initial_capital=100_000, latency_ms=150.0)
+        """PAPR-03: Latency simulation with random jitter."""
+        engine = PaperTradingEngine(
+            initial_capital=100_000,
+            latency_min_ms=50.0,
+            latency_max_ms=200.0,
+            latency_enabled=True,
+        )
         result = engine.submit_signal(_signal())
-        assert result.latency_ms == 150.0
+        assert result.filled
+        assert 50.0 <= result.latency_ms <= 200.0
+        # Fill price should differ from entry due to latency drift
+        assert result.fill_price != _signal().entry_price
 
     def test_risk_rejection(self) -> None:
         """Risk manager rejects → not filled."""

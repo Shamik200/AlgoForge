@@ -63,7 +63,7 @@ async def mock_pipeline():
 
     pipeline = DataPipeline(
         feed=mock_feed,
-        store=store,
+        cache=store,
         event_bus=event_bus,
     )
 
