@@ -11,9 +11,11 @@ from algoforge.technical.ema import EMA
 from algoforge.technical.engine import IndicatorEngine, IndicatorSnapshot
 from algoforge.technical.ichimoku import Ichimoku
 from algoforge.technical.indicator_base import Indicator, IndicatorResult
+from algoforge.technical.kama import KAMA
 from algoforge.technical.keltner import KeltnerChannels
 from algoforge.technical.macd import MACD
 from algoforge.technical.obv import OBV
+from algoforge.technical.roc import ROC
 from algoforge.technical.rsi import RSI
 from algoforge.technical.stochastic import Stochastic
 from algoforge.technical.supertrend import Supertrend
@@ -31,9 +33,11 @@ __all__ = [
     "IndicatorEngine",
     "IndicatorResult",
     "IndicatorSnapshot",
+    "KAMA",
     "KeltnerChannels",
     "MACD",
     "OBV",
+    "ROC",
     "RSI",
     "Stochastic",
     "Supertrend",

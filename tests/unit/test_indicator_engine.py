@@ -61,19 +61,37 @@ class TestIndicatorSnapshot:
 class TestIndicatorEngine:
     """Test IndicatorEngine orchestrator."""
 
-    def test_engine_has_14_indicators(self) -> None:
-        """Engine registers all 14 indicators."""
+    def test_engine_has_8_core_indicators_by_default(self) -> None:
+        """Engine registers 8 core orthogonal indicators by default."""
         engine = IndicatorEngine()
-        assert engine.indicator_count == 14
+        assert engine.indicator_count == 8
+        assert engine.core_count == 8
+        assert engine.tool_count == 0
 
-    def test_engine_computes_all_indicators(self) -> None:
-        """All 14 indicators produce results from sufficient data."""
-        engine = IndicatorEngine()
+    def test_engine_loads_supporting_tools(self) -> None:
+        """Engine can load optional supporting tools."""
+        engine = IndicatorEngine(include_tools=["donchian", "keltner"])
+        assert engine.indicator_count == 10
+        assert engine.core_count == 8
+        assert engine.tool_count == 2
+        
+        tool_names = [i.name for i in engine.tool_indicators]
+        assert "donchian" in tool_names
+        assert "keltner" in tool_names
+
+    def test_engine_ignores_unknown_tools(self) -> None:
+        """Engine ignores unrecognized tools gracefully."""
+        engine = IndicatorEngine(include_tools=["fake_tool"])
+        assert engine.tool_count == 0
+
+    def test_engine_computes_all_active_indicators(self) -> None:
+        """All active indicators produce results from sufficient data."""
+        engine = IndicatorEngine(include_tools=["donchian"])
         series = _make_series("AAPL", Timeframe.D1, 200)
         snapshot = engine.compute(series)
 
-        # All 14 should succeed with 200 candles
-        assert len(snapshot.indicator_names) == 14
+        # 8 core + 1 tool = 9 results
+        assert len(snapshot.indicator_names) == 9
 
     def test_engine_caching(self) -> None:
         """Results are cached by symbol/timeframe."""
@@ -83,7 +101,7 @@ class TestIndicatorEngine:
 
         cached = engine.get_cached("AAPL", Timeframe.D1)
         assert cached is not None
-        assert len(cached.indicator_names) == 14
+        assert len(cached.indicator_names) == 8
 
     def test_engine_cache_miss(self) -> None:
         """Cache miss returns None."""
@@ -118,10 +136,8 @@ class TestIndicatorEngine:
         series = _make_series("AAPL", Timeframe.D1, 10)  # Only 10 candles
         snapshot = engine.compute(series)
 
-        # Some indicators (EMA-200, Ichimoku-52, etc.) need more data
-        assert len(snapshot.indicator_names) < 14
-        # But short-period ones should still compute
-        assert len(snapshot.indicator_names) > 0
+        # Most core indicators need > 10 candles
+        assert len(snapshot.indicator_names) < 8
 
     def test_engine_empty_series(self) -> None:
         """Empty series produces empty snapshot."""
@@ -131,31 +147,36 @@ class TestIndicatorEngine:
         assert len(snapshot.indicator_names) == 0
 
     def test_engine_stats(self) -> None:
-        """Stats track computations."""
-        engine = IndicatorEngine()
+        """Stats track computations and engine topology."""
+        engine = IndicatorEngine(include_tools=["donchian"])
         engine.compute(_make_series("AAPL", Timeframe.D1, 200))
         stats = engine.stats
         assert stats["total_computations"] == 1
         assert stats["total_time_ms"] > 0
+        assert stats["core_count"] == 8
+        assert stats["tool_count"] == 1
 
     def test_engine_custom_params(self) -> None:
         """Custom indicator parameters are respected."""
         engine = IndicatorEngine(
-            ema_periods=[10, 20],
+            kama_er_period=5,
             rsi_period=7,
             atr_period=10,
         )
         series = _make_series("AAPL", Timeframe.D1, 200)
         snapshot = engine.compute(series)
 
-        ema_result = snapshot.get("ema")
-        assert ema_result is not None
-        assert "ema_10" in ema_result.values
-        assert "ema_20" in ema_result.values
+        kama_result = snapshot.get("kama")
+        assert kama_result is not None
+        assert kama_result.params["er_period"] == 5
+
+        rsi_result = snapshot.get("rsi")
+        assert rsi_result is not None
+        assert rsi_result.params["period"] == 7
 
     def test_engine_compute_batch(self) -> None:
         """Batch compute processes multiple series."""
-        engine = IndicatorEngine(ema_periods=[5, 9])
+        engine = IndicatorEngine()
         series_list = [
             _make_series("AAPL", Timeframe.D1, 200),
             _make_series("GOOG", Timeframe.H1, 200),
@@ -171,9 +192,9 @@ class TestIndicatorEngine:
         snapshot = engine.compute(series)
         latest = snapshot.latest_values()
 
-        assert "ema" in latest
+        assert "kama" in latest
         assert "rsi" in latest
-        assert "macd" in latest
+        assert "roc" in latest
         assert isinstance(latest["rsi"]["rsi"], float)
 
 
@@ -205,3 +226,4 @@ class TestIndicatorPerformance:
         elapsed = (time.perf_counter() - start) * 1000
 
         assert elapsed < 500, f"6-timeframe batch took {elapsed:.1f}ms, expected < 500ms"
+
