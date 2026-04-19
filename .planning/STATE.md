@@ -5,15 +5,15 @@
 See: .planning/PROJECT.md (updated 2026-04-18)
 
 **Core value:** Risk management is supreme — no trade executes without passing every risk check.
-**Current focus:** Phase 3 — Orthogonal Indicator Engine
+**Current focus:** Phase 4 — Structural Confluence Detection
 
 ## Current Phase
 
-**Phase:** 2 → ✅ COMPLETE
-**Status:** Executed — Pydantic events, hybrid transport, worker pool, correlation IDs
-**Goal:** Build the asyncio event-driven backbone with Redis Streams pub/sub, correlation IDs, and async data pipeline
-**Context:** Full roadmap rewrite — 22 phases aligned with refined trading system prompt
-**Plans:** executed inline | **Tests:** 467/467 passing
+**Phase:** 3 → ✅ COMPLETE
+**Status:** Executed — KAMA, ROC, Two-Tier Indicator Engine
+**Goal:** Restructure the existing 14-indicator engine into a 7 orthogonal indicator engine (zero redundancy) plus 3 optional supporting tools.
+**Context:** KAMA and ROC implemented in NumPy. Two-tier engine architecture introduced.
+**Plans:** executed inline | **Tests:** 469/469 passing
 
 ## Progress
 
@@ -21,7 +21,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 |-------|------|--------|-------|
 | 1 | Foundation & Data Infrastructure | ✅ Complete (2026-04-19) | 4/4 |
 | 2 | Async Event Bus & Message Architecture | ✅ Complete (2026-04-19) | inline |
-| 3 | Orthogonal Indicator Engine (7 Indicators) | ⬜ Not started | 0 |
+| 3 | Orthogonal Indicator Engine (7 Indicators) | ✅ Complete (2026-04-19) | inline |
 | 4 | Structural Confluence Detection | ⬜ Not started | 0 |
 | 5 | HMM Probabilistic Regime Detector | ⬜ Not started | 0 |
 | 6 | Signal Family: Momentum | ⬜ Not started | 0 |
@@ -70,5 +70,9 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-19 | Event types migrated from dataclass to Pydantic BaseModel | 2 |
 | 2026-04-19 | FillEvent added for order lifecycle completion | 2 |
 
+| 2026-04-19 | Two-tier engine: 8 core always computed + optional tools | 3 |
+| 2026-04-19 | Pure NumPy KAMA and ROC indicator implementations | 3 |
+| 2026-04-19 | Unlimited in-memory caching granularity maintained | 3 |
+
 ---
-*Last updated: 2026-04-19 — Phase 2 complete — 467 tests — advancing to Phase 3*
+*Last updated: 2026-04-19 — Phase 3 complete — 469 tests — advancing to Phase 4*
