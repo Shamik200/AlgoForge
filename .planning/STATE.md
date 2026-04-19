@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 4 → ✅ COMPLETE
-**Status:** Executed — Structural Confluence Engine, Swings Detection
-**Goal:** Build objective, data-driven S/R detection using volume profile, swing point clustering, and dynamic MAs.
-**Context:** Pydantic models for PriceLevel and ConfluenceZone. `detect_swings` and `cluster_swings` implemented with ATR-based clustering.
-**Plans:** executed inline | **Tests:** 474/474 passing
+**Phase:** 5 → ✅ COMPLETE
+**Status:** Executed — HMM Probabilistic Regime Detector
+**Goal:** Build 4-state Hidden Markov Model for market regime classification.
+**Context:** Pydantic models for RegimeProbabilities. Preprocessing with EMA smoothing. Offline `hmmlearn` trainer and runtime inference engine.
+**Plans:** executed inline | **Tests:** 478/478 passing
 
 ## Progress
 
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2 | Async Event Bus & Message Architecture | ✅ Complete (2026-04-19) | inline |
 | 3 | Orthogonal Indicator Engine (7 Indicators) | ✅ Complete (2026-04-19) | inline |
 | 4 | Structural Confluence Detection | ✅ Complete (2026-04-19) | inline |
-| 5 | HMM Probabilistic Regime Detector | ⬜ Not started | 0 |
+| 5 | HMM Probabilistic Regime Detector | ✅ Complete (2026-04-19) | inline |
 | 6 | Signal Family: Momentum | ⬜ Not started | 0 |
 | 7 | Signal Family: Mean Reversion | ⬜ Not started | 0 |
 | 8 | Signal Family: Breakout / Volatility | ⬜ Not started | 0 |
@@ -78,5 +78,9 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-19 | Swing point detection and ATR-based clustering | 4 |
 | 2026-04-19 | Structural Confluence Engine (aggregating MAs, POC, Swings) | 4 |
 
+| 2026-04-19 | Pre-smoothed features for HMM to avoid regime flip-flopping | 5 |
+| 2026-04-19 | Offline weekly scheduled retraining for HMM | 5 |
+| 2026-04-19 | Probability entropy threshold used for Uncertainty Flag | 5 |
+
 ---
-*Last updated: 2026-04-19 — Phase 4 complete — 474 tests — advancing to Phase 5*
+*Last updated: 2026-04-19 — Phase 5 complete — 478 tests — advancing to Phase 6*
