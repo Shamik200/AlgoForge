@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 6 → ✅ COMPLETE
-**Status:** Executed — Momentum Signal Family
-**Goal:** Implement the Momentum signal family (time-series + VWAP deviation) with KAMA/ATR/Volume confirmations.
-**Context:** Outputs standard `SignalResult` (z-score [-1, 1]). Integrates HMM regime multiplier (1.3x boost in trends).
-**Plans:** executed inline | **Tests:** 482/482 passing
+**Phase:** 7 → ✅ COMPLETE
+**Status:** Executed — Mean Reversion Signal Family
+**Goal:** Implement the Mean Reversion signal family using VWAP z-scores, Bollinger %B extremes, and strict RSI divergence.
+**Context:** Outputs standard `SignalResult` (z-score [-1, 1]). Guarded by Regime probabilities and Momentum exhaustion.
+**Plans:** executed inline | **Tests:** 486/486 passing
 
 ## Progress
 
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 4 | Structural Confluence Detection | ✅ Complete (2026-04-19) | inline |
 | 5 | HMM Probabilistic Regime Detector | ✅ Complete (2026-04-19) | inline |
 | 6 | Signal Family: Momentum | ✅ Complete (2026-04-19) | inline |
-| 7 | Signal Family: Mean Reversion | ⬜ Not started | 0 |
+| 7 | Signal Family: Mean Reversion | ✅ Complete (2026-04-19) | inline |
 | 8 | Signal Family: Breakout / Volatility | ⬜ Not started | 0 |
 | 9 | Signal Family: Structural Confluence | ⬜ Not started | 0 |
 | 10 | Risk Management Engine | ⬜ Not started | 0 |
@@ -83,6 +83,9 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-19 | Probability entropy threshold used for Uncertainty Flag | 5 |
 | 2026-04-19 | Intraday session resets for VWAP tracking | 6 |
 | 2026-04-19 | Centralized SignalResult model enforcing standard [-1, 1] scores | 6 |
+| 2026-04-19 | Strict structural RSI divergence matching using Phase 4 swing logic | 7 |
+| 2026-04-19 | Mean Reversion HMM regime guard (>0.40 probability to activate) | 7 |
+| 2026-04-19 | Anti-trend steamroller guard (disables if momentum > 0.80) | 7 |
 
 ---
-*Last updated: 2026-04-19 — Phase 6 complete — 482 tests — advancing to Phase 7*
+*Last updated: 2026-04-19 — Phase 7 complete — 486 tests — advancing to Phase 8*
