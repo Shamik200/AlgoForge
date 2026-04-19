@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 5 → ✅ COMPLETE
-**Status:** Executed — HMM Probabilistic Regime Detector
-**Goal:** Build 4-state Hidden Markov Model for market regime classification.
-**Context:** Pydantic models for RegimeProbabilities. Preprocessing with EMA smoothing. Offline `hmmlearn` trainer and runtime inference engine.
-**Plans:** executed inline | **Tests:** 478/478 passing
+**Phase:** 6 → ✅ COMPLETE
+**Status:** Executed — Momentum Signal Family
+**Goal:** Implement the Momentum signal family (time-series + VWAP deviation) with KAMA/ATR/Volume confirmations.
+**Context:** Outputs standard `SignalResult` (z-score [-1, 1]). Integrates HMM regime multiplier (1.3x boost in trends).
+**Plans:** executed inline | **Tests:** 482/482 passing
 
 ## Progress
 
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 3 | Orthogonal Indicator Engine (7 Indicators) | ✅ Complete (2026-04-19) | inline |
 | 4 | Structural Confluence Detection | ✅ Complete (2026-04-19) | inline |
 | 5 | HMM Probabilistic Regime Detector | ✅ Complete (2026-04-19) | inline |
-| 6 | Signal Family: Momentum | ⬜ Not started | 0 |
+| 6 | Signal Family: Momentum | ✅ Complete (2026-04-19) | inline |
 | 7 | Signal Family: Mean Reversion | ⬜ Not started | 0 |
 | 8 | Signal Family: Breakout / Volatility | ⬜ Not started | 0 |
 | 9 | Signal Family: Structural Confluence | ⬜ Not started | 0 |
@@ -81,6 +81,8 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-19 | Pre-smoothed features for HMM to avoid regime flip-flopping | 5 |
 | 2026-04-19 | Offline weekly scheduled retraining for HMM | 5 |
 | 2026-04-19 | Probability entropy threshold used for Uncertainty Flag | 5 |
+| 2026-04-19 | Intraday session resets for VWAP tracking | 6 |
+| 2026-04-19 | Centralized SignalResult model enforcing standard [-1, 1] scores | 6 |
 
 ---
-*Last updated: 2026-04-19 — Phase 5 complete — 478 tests — advancing to Phase 6*
+*Last updated: 2026-04-19 — Phase 6 complete — 482 tests — advancing to Phase 7*

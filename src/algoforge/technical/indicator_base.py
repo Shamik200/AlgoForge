@@ -153,3 +153,24 @@ def true_range(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray) -> np.nd
         tr[i] = max(hl, hc, lc)
 
     return tr
+    
+
+def roc_calc(data: np.ndarray, period: int) -> np.ndarray:
+    """Calculate Rate of Change (ROC).
+    
+    ROC = (Price_t - Price_{t-n}) / Price_{t-n}
+    
+    Args:
+        data: Input data array.
+        period: ROC period.
+        
+    Returns:
+        Array of ROC values, NaN padded at the start.
+    """
+    n = len(data)
+    if n <= period:
+        return np.full(n, np.nan)
+        
+    result = np.full(n, np.nan)
+    result[period:] = (data[period:] - data[:-period]) / data[:-period]
+    return result
