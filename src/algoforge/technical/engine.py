@@ -1,9 +1,22 @@
-"""IndicatorEngine — Orchestrates all 14 indicators.
+"""IndicatorEngine v2 — Two-tier Orthogonal Indicator Engine.
 
-Subscribes to MarketDataEvent, computes all indicators for a symbol/timeframe,
+7 core orthogonal indicators (always computed):
+  1. KAMA (10, 2, 30) — adaptive trend direction
+  2. ADX/DMI (14) — trend strength
+  3. ROC (14) — pure momentum
+  4. ATR (14) — volatility state
+  5. Bollinger %B (20, 2σ) — volatility extremes
+  6. OBV — volume-price divergence
+  7. VWAP — institutional fair value
+  8. RSI (14) — divergence detection ONLY
+
+Supporting tools (optional, configurable):
+  - Donchian Channels (20)
+  - Keltner Channels (20, 1.5×ATR)
+  - Volume Profile
+
+Subscribes to MarketDataEvent, computes indicators for a symbol/timeframe,
 caches results in-memory, and publishes IndicatorUpdateEvent.
-
-This is the single entry point for all indicator computation downstream.
 """
 
 from __future__ import annotations
@@ -20,25 +33,29 @@ from algoforge.technical.adx import ADX
 from algoforge.technical.atr import ATR
 from algoforge.technical.bollinger import BollingerBands
 from algoforge.technical.donchian import DonchianChannels
-from algoforge.technical.ema import EMA
-from algoforge.technical.ichimoku import Ichimoku
 from algoforge.technical.indicator_base import Indicator, IndicatorResult
+from algoforge.technical.kama import KAMA
 from algoforge.technical.keltner import KeltnerChannels
-from algoforge.technical.macd import MACD
 from algoforge.technical.obv import OBV
+from algoforge.technical.roc import ROC
 from algoforge.technical.rsi import RSI
-from algoforge.technical.stochastic import Stochastic
-from algoforge.technical.supertrend import Supertrend
 from algoforge.technical.volume_profile import VolumeProfile
 from algoforge.technical.vwap import VWAP
 
 logger = structlog.get_logger(__name__)
 
+# Registry of available supporting tools
+SUPPORTING_TOOLS: dict[str, type[Indicator]] = {
+    "donchian": DonchianChannels,
+    "keltner": KeltnerChannels,
+    "volume_profile": VolumeProfile,
+}
+
 
 class IndicatorSnapshot:
     """Complete indicator state for one symbol/timeframe pair.
 
-    Holds all 14 indicator results, providing a consistent view
+    Holds all indicator results, providing a consistent view
     for downstream strategies to consume.
     """
 
@@ -83,60 +100,85 @@ class IndicatorSnapshot:
 
 
 class IndicatorEngine:
-    """Orchestrates computation of all 14 technical indicators.
+    """Two-tier orthogonal indicator engine.
+
+    Tier 1 (Core): 8 orthogonal indicators — ALWAYS computed.
+    Tier 2 (Tools): Optional supporting tools — configurable.
 
     Central hub for indicator management:
-    - Registers all indicators with configurable parameters
-    - Computes all indicators when new candle data arrives
+    - Registers core indicators with fixed parameters
+    - Optionally registers supporting tools
+    - Computes all active indicators when new candle data arrives
     - Caches results in-memory (keyed by symbol:timeframe)
-    - Publishes batched IndicatorUpdateEvent via event bus
 
     Usage:
-        engine = IndicatorEngine(config_params)
+        # Core only (default)
+        engine = IndicatorEngine()
+
+        # Core + specific tools
+        engine = IndicatorEngine(include_tools=["donchian", "keltner"])
+
+        # Core + all tools
+        engine = IndicatorEngine(include_tools=list(SUPPORTING_TOOLS.keys()))
+
         snapshot = engine.compute(series)
         latest = snapshot.latest_values()
     """
 
     def __init__(
         self,
-        ema_periods: list[int] | None = None,
+        # KAMA params
+        kama_er_period: int = 10,
+        kama_fast_sc: int = 2,
+        kama_slow_sc: int = 30,
+        # Core indicator params
         rsi_period: int = 14,
         adx_period: int = 14,
         atr_period: int = 14,
-        macd_fast: int = 12,
-        macd_slow: int = 26,
-        macd_signal: int = 9,
+        roc_period: int = 14,
         bb_period: int = 20,
         bb_std: float = 2.0,
+        # Supporting tool params
         kc_period: int = 20,
         kc_multiplier: float = 1.5,
-        st_period: int = 10,
-        st_multiplier: float = 3.0,
-        stoch_k: int = 14,
-        stoch_d: int = 3,
-        stoch_smooth: int = 3,
         donchian_period: int = 20,
-        ichimoku_tenkan: int = 9,
-        ichimoku_kijun: int = 26,
-        ichimoku_senkou: int = 52,
+        # Tool selection
+        include_tools: list[str] | None = None,
     ) -> None:
-        """Initialize with configurable parameters for all indicators."""
-        self._indicators: list[Indicator] = [
-            EMA(periods=ema_periods or [5, 9, 21, 50, 100, 200]),
-            RSI(period=rsi_period),
+        """Initialize with configurable parameters.
+
+        Args:
+            include_tools: List of supporting tool names to include.
+                Options: "donchian", "keltner", "volume_profile".
+                None = core indicators only (default).
+        """
+        # Tier 1: Core orthogonal indicators (ALWAYS computed)
+        self._core_indicators: list[Indicator] = [
+            KAMA(er_period=kama_er_period, fast_sc=kama_fast_sc, slow_sc=kama_slow_sc),
             ADX(period=adx_period),
+            ROC(period=roc_period),
             ATR(period=atr_period),
-            MACD(fast=macd_fast, slow=macd_slow, signal=macd_signal),
             BollingerBands(period=bb_period, std_dev=bb_std),
-            KeltnerChannels(period=kc_period, multiplier=kc_multiplier),
-            VWAP(),
-            Supertrend(period=st_period, multiplier=st_multiplier),
-            Stochastic(k_period=stoch_k, d_period=stoch_d, smooth=stoch_smooth),
-            DonchianChannels(period=donchian_period),
-            VolumeProfile(),
             OBV(),
-            Ichimoku(tenkan=ichimoku_tenkan, kijun=ichimoku_kijun, senkou_b=ichimoku_senkou),
+            VWAP(),
+            RSI(period=rsi_period),
         ]
+
+        # Tier 2: Supporting tools (optional)
+        self._tool_indicators: list[Indicator] = []
+        if include_tools:
+            for tool_name in include_tools:
+                if tool_name == "donchian":
+                    self._tool_indicators.append(DonchianChannels(period=donchian_period))
+                elif tool_name == "keltner":
+                    self._tool_indicators.append(KeltnerChannels(period=kc_period, multiplier=kc_multiplier))
+                elif tool_name == "volume_profile":
+                    self._tool_indicators.append(VolumeProfile())
+                else:
+                    logger.warning("unknown_tool", tool=tool_name, available=list(SUPPORTING_TOOLS.keys()))
+
+        # All active indicators
+        self._indicators: list[Indicator] = self._core_indicators + self._tool_indicators
 
         # Cache: {symbol}:{timeframe} -> IndicatorSnapshot
         self._cache: dict[str, IndicatorSnapshot] = {}
@@ -147,13 +189,33 @@ class IndicatorEngine:
 
     @property
     def indicators(self) -> list[Indicator]:
-        """Registered indicators."""
+        """All active indicators (core + tools)."""
         return list(self._indicators)
 
     @property
+    def core_indicators(self) -> list[Indicator]:
+        """Core orthogonal indicators only."""
+        return list(self._core_indicators)
+
+    @property
+    def tool_indicators(self) -> list[Indicator]:
+        """Optional supporting tools only."""
+        return list(self._tool_indicators)
+
+    @property
     def indicator_count(self) -> int:
-        """Number of registered indicators."""
+        """Number of active indicators."""
         return len(self._indicators)
+
+    @property
+    def core_count(self) -> int:
+        """Number of core indicators."""
+        return len(self._core_indicators)
+
+    @property
+    def tool_count(self) -> int:
+        """Number of active supporting tools."""
+        return len(self._tool_indicators)
 
     @property
     def cache_size(self) -> int:
@@ -173,6 +235,8 @@ class IndicatorEngine:
             "total_time_ms": round(self._total_time_ms, 2),
             "avg_time_ms": round(avg_ms, 2),
             "cache_size": self.cache_size,
+            "core_count": self.core_count,
+            "tool_count": self.tool_count,
         }
 
     def _cache_key(self, symbol: str, timeframe: Timeframe) -> str:
@@ -248,6 +312,8 @@ class IndicatorEngine:
             symbol=series.symbol,
             timeframe=series.timeframe.value,
             indicators=len(snapshot.indicator_names),
+            core=self.core_count,
+            tools=self.tool_count,
             elapsed_ms=round(elapsed_ms, 2),
         )
 
