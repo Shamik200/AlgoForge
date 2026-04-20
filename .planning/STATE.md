@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 9 → ✅ COMPLETE
-**Status:** Executed — Structural Confluence Signal Family
-**Goal:** Convert structural confluence detection (Phase 4) into a scored signal family that integrates with the combination framework.
-**Context:** Outputs standard `SignalResult` (z-score [-1, 1]). Guarded by Regime probabilities and enhanced by Multi-Timeframe (MTF) alignment.
-**Plans:** executed inline | **Tests:** 493/493 passing
+**Phase:** 10 → ✅ COMPLETE
+**Status:** Executed — Risk Management Engine
+**Goal:** Build the complete risk management system (per-trade limits, portfolio limits, global account limits, circuit breakers, and Kelly position sizing).
+**Context:** Outputs `RiskEvaluation` with allocated capital and strict approval/rejection flags. Backed by `TradeLedger` and `CorrelationMatrix`.
+**Plans:** executed inline | **Tests:** 498/498 passing
 
 ## Progress
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 7 | Signal Family: Mean Reversion | ✅ Complete (2026-04-19) | inline |
 | 8 | Signal Family: Breakout / Volatility | ✅ Complete (2026-04-19) | inline |
 | 9 | Signal Family: Structural Confluence | ✅ Complete (2026-04-20) | inline |
-| 10 | Risk Management Engine | ⬜ Not started | 0 |
+| 10 | Risk Management Engine | ✅ Complete (2026-04-20) | inline |
 | 11 | Signal Combination & Conviction Framework | ⬜ Not started | 0 |
 | 12 | Multi-Target SL/TP & Partial Exits | ⬜ Not started | 0 |
 | 13 | Order Management System (OMS) | ⬜ Not started | 0 |
@@ -90,6 +90,8 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-19 | TTM Squeeze Volatility detection (Bollinger Bands inside Keltner Channels) | 8 |
 | 2026-04-20 | Dynamic proximity bounds (+/- 0.5 ATR) for testing structural levels | 9 |
 | 2026-04-20 | MTF structural overlap multipliers (1.5x) for signal conviction | 9 |
+| 2026-04-20 | Fractional Kelly Position Sizing with fallback to Fixed Fractional | 10 |
+| 2026-04-20 | O(1) Cached Correlation Matrix limit evaluation | 10 |
 
 ---
-*Last updated: 2026-04-20 — Phase 9 complete — 493 tests — advancing to Phase 10*
+*Last updated: 2026-04-20 — Phase 10 complete — 498 tests — advancing to Phase 11*

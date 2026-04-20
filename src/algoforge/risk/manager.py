@@ -30,6 +30,10 @@ class RiskConfig(BaseModel):
     max_position_size_pct: float = Field(default=0.10, description="Max 5-10% of capital per position")
     min_risk_reward: float = Field(default=2.0, description="Minimum R:R ratio")
 
+    # Position sizing
+    sizing_method: str = Field(default="kelly", description="'fixed' or 'kelly'")
+    kelly_fraction: float = Field(default=0.25, description="Fractional Kelly (0.25 = quarter-Kelly for safety)")
+
     # Consecutive loss limits
     max_consecutive_losses: int = Field(default=5, description="Max consecutive losses before cooldown")
     cooldown_bars: int = Field(default=60, description="Cooldown period in bars after max losses")
@@ -42,6 +46,9 @@ class RiskConfig(BaseModel):
     max_sector_exposure_pct: float = Field(default=0.25, description="Max 25% per sector")
     max_directional_exposure_pct: float = Field(default=0.60, description="Max 60% net direction")
     max_correlation: float = Field(default=0.70, description="Max correlation between positions")
+
+    # Circuit breaker (RISK-19)
+    market_circuit_breaker_pct: float = Field(default=0.05, description="Halt if market drops >5% from open")
 
     # Execution
     slippage_buffer_pct: float = Field(default=0.001, description="0.1% slippage buffer on SL/TP")
@@ -92,6 +99,9 @@ class RiskManager:
         self._vetoes = 0
         self._approvals = 0
         self._kill_switch_active = False
+        self._circuit_breaker_active = False
+        self._session_open_prices: dict[str, float] = {}  # RISK-19
+        self._trade_results: list[float] = []  # For Kelly sizing
 
     @property
     def capital(self) -> float:
@@ -109,6 +119,8 @@ class RiskManager:
             "vetoes": self._vetoes,
             "approvals": self._approvals,
             "kill_switch": self._kill_switch_active,
+            "circuit_breaker": self._circuit_breaker_active,
+            "sizing_method": self._config.sizing_method,
         }
 
     @property
@@ -133,6 +145,11 @@ class RiskManager:
         self._current_bar = current_bar
         positions = open_positions or []
         reasons: list[str] = []
+
+        # RISK-19: Circuit breaker check
+        if self._circuit_breaker_active:
+            reasons.append("CIRCUIT_BREAKER: Market dropped >5% from open — trading halted")
+            return self._reject(reasons)
 
         # RISK-14: Kill switch check (absolute veto)
         if self._kill_switch_active:
@@ -264,16 +281,70 @@ class RiskManager:
         )
 
     def _calculate_position_size(self, signal: Signal) -> float:
-        """Calculate position size using risk-per-trade method.
+        """Calculate position size using configured method.
 
-        Position size = (Capital × Max Risk %) / Risk per share
+        Fixed: Position size = (Capital × Max Risk %) / Risk per share
+        Kelly: Uses Kelly Criterion with fractional scaling (SIZE-01)
         """
         risk_per_share = abs(signal.entry_price - signal.stop_loss)
         if risk_per_share == 0:
             return 0.0
 
+        if self._config.sizing_method == "kelly" and len(self._trade_results) >= 20:
+            kelly_size = self._kelly_position_size(signal, risk_per_share)
+            if kelly_size > 0:
+                return kelly_size
+
+        # Default: fixed risk-per-trade method
         max_risk_amount = self._capital * self._config.max_risk_per_trade_pct
         position_size = max_risk_amount / risk_per_share
+        return position_size
+
+    def _kelly_position_size(self, signal: Signal, risk_per_share: float) -> float:
+        """Kelly Criterion position sizing (SIZE-01).
+
+        Kelly % = W - [(1 - W) / R]
+        Where:
+          W = historical win rate
+          R = average win / average loss ratio
+
+        We use fractional Kelly (default 25%) for safety to account for
+        estimation error and non-normal distribution of returns.
+        """
+        wins = [r for r in self._trade_results if r > 0]
+        losses = [r for r in self._trade_results if r <= 0]
+
+        if not wins or not losses:
+            return 0.0
+
+        win_rate = len(wins) / len(self._trade_results)
+        avg_win = sum(wins) / len(wins)
+        avg_loss = abs(sum(losses) / len(losses))
+
+        if avg_loss == 0:
+            return 0.0
+
+        win_loss_ratio = avg_win / avg_loss
+        kelly_pct = win_rate - ((1 - win_rate) / win_loss_ratio)
+
+        # Fractional Kelly for safety + floor at 0
+        kelly_pct = max(0.0, kelly_pct * self._config.kelly_fraction)
+
+        # Cap at max_risk_per_trade_pct to prevent oversize
+        kelly_pct = min(kelly_pct, self._config.max_risk_per_trade_pct)
+
+        max_risk_amount = self._capital * kelly_pct
+        position_size = max_risk_amount / risk_per_share
+
+        logger.debug(
+            "kelly_sizing",
+            win_rate=round(win_rate, 3),
+            win_loss_ratio=round(win_loss_ratio, 2),
+            raw_kelly=round(kelly_pct / self._config.kelly_fraction, 4) if self._config.kelly_fraction > 0 else 0,
+            fractional_kelly=round(kelly_pct, 4),
+            position_size=round(position_size, 4),
+        )
+
         return position_size
 
     def _calculate_risk_amount(self, signal: Signal, position_size: float) -> float:
@@ -304,10 +375,11 @@ class RiskManager:
         return RiskCheckResult(approved=False, rejection_reasons=reasons)
 
     def record_trade_result(self, pnl: float) -> None:
-        """Record trade outcome to update loss tracking."""
+        """Record trade outcome to update loss tracking and Kelly history."""
         self._capital += pnl
         self._daily_pnl += pnl
         self._weekly_pnl += pnl
+        self._trade_results.append(pnl)
 
         if pnl < 0:
             self._consecutive_losses += 1
@@ -316,6 +388,42 @@ class RiskManager:
 
         if self._capital > self._peak_equity:
             self._peak_equity = self._capital
+
+    def update_session_open(self, prices: dict[str, float]) -> None:
+        """Record session open prices for circuit breaker (RISK-19).
+
+        Call this once at market open with the opening prices.
+        """
+        self._session_open_prices.update(prices)
+        self._circuit_breaker_active = False  # Reset for new session
+
+    def check_circuit_breaker(self, current_prices: dict[str, float]) -> bool:
+        """Check if any tracked symbol has dropped >5% from session open (RISK-19).
+
+        Returns True if circuit breaker triggers.
+        """
+        if not self._session_open_prices:
+            return False
+
+        threshold = self._config.market_circuit_breaker_pct
+
+        for symbol, current in current_prices.items():
+            open_price = self._session_open_prices.get(symbol)
+            if open_price and open_price > 0:
+                drop = (open_price - current) / open_price
+                if drop >= threshold:
+                    self._circuit_breaker_active = True
+                    logger.error(
+                        "circuit_breaker_triggered",
+                        symbol=symbol,
+                        open_price=open_price,
+                        current_price=current,
+                        drop_pct=round(drop * 100, 2),
+                        threshold_pct=round(threshold * 100, 1),
+                    )
+                    return True
+
+        return False
 
     def reset_daily(self) -> None:
         """Reset daily PnL counter (call at market open)."""
@@ -330,3 +438,8 @@ class RiskManager:
         """Manual kill switch reset (requires human confirmation)."""
         self._kill_switch_active = False
         logger.warning("kill_switch_reset", capital=self._capital)
+
+    def reset_circuit_breaker(self) -> None:
+        """Reset circuit breaker for new session."""
+        self._circuit_breaker_active = False
+        self._session_open_prices.clear()
