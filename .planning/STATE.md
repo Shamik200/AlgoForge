@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 8 → ✅ COMPLETE
-**Status:** Executed — Breakout / Volatility Signal Family
-**Goal:** Implement Volatility Squeeze (Bollinger inside Keltner), Donchian volume breakouts, and ORB with stateless failure handling.
-**Context:** Outputs standard `SignalResult` (z-score [-1, 1]). Guarded by Regime probabilities (Trending > 50%).
-**Plans:** executed inline | **Tests:** 490/490 passing
+**Phase:** 9 → ✅ COMPLETE
+**Status:** Executed — Structural Confluence Signal Family
+**Goal:** Convert structural confluence detection (Phase 4) into a scored signal family that integrates with the combination framework.
+**Context:** Outputs standard `SignalResult` (z-score [-1, 1]). Guarded by Regime probabilities and enhanced by Multi-Timeframe (MTF) alignment.
+**Plans:** executed inline | **Tests:** 493/493 passing
 
 ## Progress
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 6 | Signal Family: Momentum | ✅ Complete (2026-04-19) | inline |
 | 7 | Signal Family: Mean Reversion | ✅ Complete (2026-04-19) | inline |
 | 8 | Signal Family: Breakout / Volatility | ✅ Complete (2026-04-19) | inline |
-| 9 | Signal Family: Structural Confluence | ⬜ Not started | 0 |
+| 9 | Signal Family: Structural Confluence | ✅ Complete (2026-04-20) | inline |
 | 10 | Risk Management Engine | ⬜ Not started | 0 |
 | 11 | Signal Combination & Conviction Framework | ⬜ Not started | 0 |
 | 12 | Multi-Target SL/TP & Partial Exits | ⬜ Not started | 0 |
@@ -88,6 +88,8 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-19 | Anti-trend steamroller guard (disables if momentum > 0.80) | 7 |
 | 2026-04-19 | Stateless Breakout Failure detection pattern (prev_close > high AND close < high) | 8 |
 | 2026-04-19 | TTM Squeeze Volatility detection (Bollinger Bands inside Keltner Channels) | 8 |
+| 2026-04-20 | Dynamic proximity bounds (+/- 0.5 ATR) for testing structural levels | 9 |
+| 2026-04-20 | MTF structural overlap multipliers (1.5x) for signal conviction | 9 |
 
 ---
-*Last updated: 2026-04-19 — Phase 8 complete — 490 tests — advancing to Phase 9*
+*Last updated: 2026-04-20 — Phase 9 complete — 493 tests — advancing to Phase 10*
