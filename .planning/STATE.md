@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 11 → ✅ COMPLETE
-**Status:** Executed — Signal Combination Engine
-**Goal:** Build the signal combination engine. Decorrelation matrix, adaptive Sharpe-based weighting, composite scoring with conviction-based position sizing.
-**Context:** Outputs standard `SignalResult` but bounded perfectly to [-1, 1]. Driven by Softmax weighting and z-score normalization.
-**Plans:** executed inline | **Tests:** 502/502 passing
+**Phase:** 12 → ✅ COMPLETE
+**Status:** Executed — Multi-Target SL/TP & Partial Exits
+**Goal:** Replace single SL/TP with ATR-anchored multi-target exits — TP1/TP2/TP3 scaling, trailing stops, time-based exit tightening.
+**Context:** Implemented Tranche architecture. Exit Manager evaluates trailing stops on closed candles and tightens to breakeven if TP1 isn't hit in time.
+**Plans:** executed inline | **Tests:** 506/506 passing
 
 ## Progress
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 9 | Signal Family: Structural Confluence | ✅ Complete (2026-04-20) | inline |
 | 10 | Risk Management Engine | ✅ Complete (2026-04-20) | inline |
 | 11 | Signal Combination & Conviction Framework | ✅ Complete (2026-04-22) | inline |
-| 12 | Multi-Target SL/TP & Partial Exits | ⬜ Not started | 0 |
+| 12 | Multi-Target SL/TP & Partial Exits | ✅ Complete (2026-04-22) | inline |
 | 13 | Order Management System (OMS) | ⬜ Not started | 0 |
 | 14 | Paper Trading Engine | ⬜ Not started | 0 |
 | 15 | Backtesting Engine | ⬜ Not started | 0 |
@@ -94,6 +94,8 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-20 | O(1) Cached Correlation Matrix limit evaluation | 10 |
 | 2026-04-22 | Rolling 100-period z-score normalization bounded to [-1.0, 1.0] | 11 |
 | 2026-04-22 | Sharpe-ratio driven Softmax weighting and Tie-breaker Tie-breaker redundancy culling | 11 |
+| 2026-04-22 | Tranche architecture (50/30/20) with staggered R-multiple exits | 12 |
+| 2026-04-22 | Time-based breakeven and closed-candle trailing stops for runners | 12 |
 
 ---
-*Last updated: 2026-04-22 — Phase 11 complete — 502 tests — advancing to Phase 12*
+*Last updated: 2026-04-22 — Phase 12 complete — 506 tests — advancing to Phase 13*

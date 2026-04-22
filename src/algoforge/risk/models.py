@@ -85,6 +85,15 @@ class ActivePosition(BaseModel):
     current_price: float
     position_size_value: float = Field(..., gt=0)
     
+    # Phase 12: Multi-Target Exits
+    parent_trade_id: str = "legacy"
+    tranche_id: int = 1
+    elapsed_candles: int = 0
+    is_breakeven: bool = False
+    trailing_step: float | None = None
+    stop_loss_price: float | None = None
+    take_profit_price: float | None = None
+    
     @property
     def pnl_pct(self) -> float:
         if self.direction == TradeDirection.LONG:
