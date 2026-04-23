@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 12 → ✅ COMPLETE
-**Status:** Executed — Multi-Target SL/TP & Partial Exits
-**Goal:** Replace single SL/TP with ATR-anchored multi-target exits — TP1/TP2/TP3 scaling, trailing stops, time-based exit tightening.
-**Context:** Implemented Tranche architecture. Exit Manager evaluates trailing stops on closed candles and tightens to breakeven if TP1 isn't hit in time.
-**Plans:** executed inline | **Tests:** 506/506 passing
+**Phase:** 13 → ✅ COMPLETE
+**Status:** Executed — Order Management System (OMS)
+**Goal:** Build proper order lifecycle management with limit orders default, market orders only for SL exits, and full audit trail.
+**Context:** Deterministic state machine with SQLite persistence. Idempotent submission via correlation_id lock. Candle-based limit order expiry.
+**Plans:** executed inline | **Tests:** 516/516 passing
 
 ## Progress
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 10 | Risk Management Engine | ✅ Complete (2026-04-20) | inline |
 | 11 | Signal Combination & Conviction Framework | ✅ Complete (2026-04-22) | inline |
 | 12 | Multi-Target SL/TP & Partial Exits | ✅ Complete (2026-04-22) | inline |
-| 13 | Order Management System (OMS) | ⬜ Not started | 0 |
+| 13 | Order Management System (OMS) | ✅ Complete (2026-04-23) | inline |
 | 14 | Paper Trading Engine | ⬜ Not started | 0 |
 | 15 | Backtesting Engine | ⬜ Not started | 0 |
 | 16 | Alpha Decay Monitoring System | ⬜ Not started | 0 |
@@ -96,6 +96,8 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-22 | Sharpe-ratio driven Softmax weighting and Tie-breaker Tie-breaker redundancy culling | 11 |
 | 2026-04-22 | Tranche architecture (50/30/20) with staggered R-multiple exits | 12 |
 | 2026-04-22 | Time-based breakeven and closed-candle trailing stops for runners | 12 |
+| 2026-04-23 | Deterministic order state machine (NEW→SUBMITTED→FILLED/CANCELLED/REJECTED) | 13 |
+| 2026-04-23 | SQLite-backed OMS with idempotent submission and candle-based limit expiry | 13 |
 
 ---
-*Last updated: 2026-04-22 — Phase 12 complete — 506 tests — advancing to Phase 13*
+*Last updated: 2026-04-23 — Phase 13 complete — 516 tests — advancing to Phase 14*
