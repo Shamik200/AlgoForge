@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 13 → ✅ COMPLETE
-**Status:** Executed — Order Management System (OMS)
-**Goal:** Build proper order lifecycle management with limit orders default, market orders only for SL exits, and full audit trail.
-**Context:** Deterministic state machine with SQLite persistence. Idempotent submission via correlation_id lock. Candle-based limit order expiry.
-**Plans:** executed inline | **Tests:** 516/516 passing
+**Phase:** 14 → ✅ COMPLETE
+**Status:** Executed — Paper Trading Engine
+**Goal:** Build high-fidelity paper trading simulator with realistic slippage, commission, latency, and market impact modeling.
+**Context:** Implemented FillResult tracking and AssetClass config maps. Realistic friction models including STT for Indian stocks and sqrt market impact.
+**Plans:** executed inline | **Tests:** 520/520 passing
 
 ## Progress
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 11 | Signal Combination & Conviction Framework | ✅ Complete (2026-04-22) | inline |
 | 12 | Multi-Target SL/TP & Partial Exits | ✅ Complete (2026-04-22) | inline |
 | 13 | Order Management System (OMS) | ✅ Complete (2026-04-23) | inline |
-| 14 | Paper Trading Engine | ⬜ Not started | 0 |
+| 14 | Paper Trading Engine | ✅ Complete (2026-04-24) | inline |
 | 15 | Backtesting Engine | ⬜ Not started | 0 |
 | 16 | Alpha Decay Monitoring System | ⬜ Not started | 0 |
 | 17 | Signal Family: Microstructure / Order Flow | ⬜ Not started | 0 |
@@ -98,6 +98,8 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-22 | Time-based breakeven and closed-candle trailing stops for runners | 12 |
 | 2026-04-23 | Deterministic order state machine (NEW→SUBMITTED→FILLED/CANCELLED/REJECTED) | 13 |
 | 2026-04-23 | SQLite-backed OMS with idempotent submission and candle-based limit expiry | 13 |
+| 2026-04-24 | Multi-asset class friction modeling (commissions, STT, slippage, latency jitter) | 14 |
+| 2026-04-24 | Square-root market impact modeling for oversized orders | 14 |
 
 ---
-*Last updated: 2026-04-23 — Phase 13 complete — 516 tests — advancing to Phase 14*
+*Last updated: 2026-04-24 — Phase 14 complete — 520 tests — advancing to Phase 15*
