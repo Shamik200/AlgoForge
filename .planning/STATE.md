@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 17 → ✅ COMPLETE
-**Status:** Executed — Signal Family: Microstructure / Order Flow
-**Goal:** VWAP deviation trading, volume imbalance, and OBV divergence with graceful L2/L1 degradation.
-**Context:** VWAPTracker with session reset and σ-based deviation scoring. Self-disabling timeframe guard on >= 1D.
-**Plans:** executed inline | **Tests:** 538/538 passing
+**Phase:** 18 → ✅ COMPLETE
+**Status:** Executed — Pairs & Cointegration Trading
+**Goal:** Expand signal universe with pairs/relative value trading using Engle-Granger cointegration.
+**Context:** OLS hedge ratio estimation, ADF test on residuals, spread z-score signals at ±2σ, rolling re-validation.
+**Plans:** executed inline | **Tests:** 545/545 passing
 
 ## Progress
 
@@ -36,7 +36,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 15 | Backtesting Engine | ✅ Complete (2026-04-25) | inline |
 | 16 | Alpha Decay Monitoring System | ✅ Complete (2026-04-25) | inline |
 | 17 | Signal Family: Microstructure / Order Flow | ✅ Complete (2026-04-25) | inline |
-| 18 | Pairs & Cointegration Trading | ⬜ Not started | 0 |
+| 18 | Pairs & Cointegration Trading | ✅ Complete (2026-04-25) | inline |
 | 19 | Fundamental Analysis Module (LangGraph) | ⬜ Not started | 0 |
 | 20 | ML/DL/RL Pipeline | ⬜ Not started | 0 |
 | 21 | Dashboard & Monitoring | ⬜ Not started | 0 |
@@ -106,6 +106,8 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-25 | Combination Engine updated: post-Softmax health throttling and re-normalization | 16 |
 | 2026-04-25 | VWAP deviation tracker with session reset and σ-based mean-reversion signals | 17 |
 | 2026-04-25 | Volume imbalance (Chaikin proxy) and OBV divergence for L1 fallback | 17 |
+| 2026-04-25 | Engle-Granger cointegration test with simplified ADF for pairs detection | 18 |
+| 2026-04-25 | Spread z-score trading at ±2σ with rolling re-validation | 18 |
 
 ---
-*Last updated: 2026-04-25 — Phase 17 complete — 538 tests — advancing to Phase 18*
+*Last updated: 2026-04-25 — Phase 18 complete — 545 tests — advancing to Phase 19*
