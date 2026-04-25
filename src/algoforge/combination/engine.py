@@ -26,12 +26,18 @@ class CombinationEngine:
         self.correlation_matrix = SignalCorrelationMatrix(window_size=corr_window)
         self.max_corr = max_corr
         
-    def combine(self, signals: list[SignalResult], sharpe_ratios: dict[str, float]) -> SignalResult:
+    def combine(
+        self, 
+        signals: list[SignalResult], 
+        sharpe_ratios: dict[str, float],
+        health_multipliers: dict[str, float] | None = None
+    ) -> SignalResult:
         """Combine multiple independent signal results into a master composite.
         
         Args:
             signals: List of SignalResult objects from the individual signal families.
             sharpe_ratios: Dictionary mapping family names to their rolling Sharpe ratios.
+            health_multipliers: Dictionary mapping family names to Alpha Decay multipliers (0.0 to 1.0).
             
         Returns:
             A SignalResult object representing the combined conviction.
@@ -82,6 +88,22 @@ class CombinationEngine:
             
         # 3. Adaptive Softmax Weighting
         weights = calculate_softmax_weights(culled_sharpes)
+        
+        # 3.5 Apply Alpha Decay Health Multipliers & Re-normalize
+        if health_multipliers:
+            throttled_weights = {}
+            for family, weight in weights.items():
+                mult = health_multipliers.get(family, 1.0)
+                throttled_weights[family] = weight * mult
+                
+            total_weight = sum(throttled_weights.values())
+            if total_weight > 0:
+                weights = {f: w / total_weight for f, w in throttled_weights.items()}
+            else:
+                return SignalResult(
+                    family_name="composite", score=0.0, direction=SignalDirection.NEUTRAL,
+                    is_valid=False, metadata={"error": "all_signals_paused_by_decay_monitor"}
+                )
         
         # 4. Composite Calculation
         composite_score = 0.0

@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 15 → ✅ COMPLETE
-**Status:** Executed — Backtesting Engine
-**Goal:** Event-driven backtester with walk-forward optimization, Monte Carlo simulation, and comprehensive performance metrics.
-**Context:** Fast-path backtest loop bypassing asyncio. Implemented metrics suite with Sharpe haircut, expanding window WFO, and sequence-shuffled Monte Carlo.
-**Plans:** executed inline | **Tests:** 525/525 passing
+**Phase:** 16 → ✅ COMPLETE
+**Status:** Executed — Alpha Decay Monitoring System
+**Goal:** Per-signal-family health monitoring with automatic weight throttling and pause mechanisms.
+**Context:** Dynamic health_multiplier system integrated into Combination Engine. Z-score baseline deviation, rolling Sharpe, and Average R checks.
+**Plans:** executed inline | **Tests:** 530/530 passing
 
 ## Progress
 
@@ -34,7 +34,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 13 | Order Management System (OMS) | ✅ Complete (2026-04-23) | inline |
 | 14 | Paper Trading Engine | ✅ Complete (2026-04-24) | inline |
 | 15 | Backtesting Engine | ✅ Complete (2026-04-25) | inline |
-| 16 | Alpha Decay Monitoring System | ⬜ Not started | 0 |
+| 16 | Alpha Decay Monitoring System | ✅ Complete (2026-04-25) | inline |
 | 17 | Signal Family: Microstructure / Order Flow | ⬜ Not started | 0 |
 | 18 | Pairs & Cointegration Trading | ⬜ Not started | 0 |
 | 19 | Fundamental Analysis Module (LangGraph) | ⬜ Not started | 0 |
@@ -102,6 +102,8 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-24 | Square-root market impact modeling for oversized orders | 14 |
 | 2026-04-25 | Fast-path backtest loop bridging real Paper Engine execution logic | 15 |
 | 2026-04-25 | Expanding window WFO and Trade sequence Monte Carlo shuffling | 15 |
+| 2026-04-25 | Alpha Decay Monitor with Z-score hit rate deviation and health multipliers | 16 |
+| 2026-04-25 | Combination Engine updated: post-Softmax health throttling and re-normalization | 16 |
 
 ---
-*Last updated: 2026-04-25 — Phase 15 complete — 525 tests — advancing to Phase 16*
+*Last updated: 2026-04-25 — Phase 16 complete — 530 tests — advancing to Phase 17*
