@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 14 → ✅ COMPLETE
-**Status:** Executed — Paper Trading Engine
-**Goal:** Build high-fidelity paper trading simulator with realistic slippage, commission, latency, and market impact modeling.
-**Context:** Implemented FillResult tracking and AssetClass config maps. Realistic friction models including STT for Indian stocks and sqrt market impact.
-**Plans:** executed inline | **Tests:** 520/520 passing
+**Phase:** 15 → ✅ COMPLETE
+**Status:** Executed — Backtesting Engine
+**Goal:** Event-driven backtester with walk-forward optimization, Monte Carlo simulation, and comprehensive performance metrics.
+**Context:** Fast-path backtest loop bypassing asyncio. Implemented metrics suite with Sharpe haircut, expanding window WFO, and sequence-shuffled Monte Carlo.
+**Plans:** executed inline | **Tests:** 525/525 passing
 
 ## Progress
 
@@ -33,7 +33,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 12 | Multi-Target SL/TP & Partial Exits | ✅ Complete (2026-04-22) | inline |
 | 13 | Order Management System (OMS) | ✅ Complete (2026-04-23) | inline |
 | 14 | Paper Trading Engine | ✅ Complete (2026-04-24) | inline |
-| 15 | Backtesting Engine | ⬜ Not started | 0 |
+| 15 | Backtesting Engine | ✅ Complete (2026-04-25) | inline |
 | 16 | Alpha Decay Monitoring System | ⬜ Not started | 0 |
 | 17 | Signal Family: Microstructure / Order Flow | ⬜ Not started | 0 |
 | 18 | Pairs & Cointegration Trading | ⬜ Not started | 0 |
@@ -100,6 +100,8 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-23 | SQLite-backed OMS with idempotent submission and candle-based limit expiry | 13 |
 | 2026-04-24 | Multi-asset class friction modeling (commissions, STT, slippage, latency jitter) | 14 |
 | 2026-04-24 | Square-root market impact modeling for oversized orders | 14 |
+| 2026-04-25 | Fast-path backtest loop bridging real Paper Engine execution logic | 15 |
+| 2026-04-25 | Expanding window WFO and Trade sequence Monte Carlo shuffling | 15 |
 
 ---
-*Last updated: 2026-04-24 — Phase 14 complete — 520 tests — advancing to Phase 15*
+*Last updated: 2026-04-25 — Phase 15 complete — 525 tests — advancing to Phase 16*

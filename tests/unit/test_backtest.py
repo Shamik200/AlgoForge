@@ -1,192 +1,135 @@
-"""Tests for Phase 8 — Backtesting Engine."""
+"""Unit tests for the Backtesting Engine."""
 
-from datetime import datetime, timezone
-
+from datetime import datetime, timedelta
+import numpy as np
+import pandas as pd
 import pytest
 
-from algoforge.core.constants import Direction, Market, MarketRegime, Timeframe
-from algoforge.core.models import OHLCV, Signal
-from algoforge.execution.backtest import BacktestEngine, BacktestMetrics
-from algoforge.risk.manager import RiskConfig
+from algoforge.backtest.models import TradePnL
+from algoforge.backtest.metrics import calculate_max_drawdown, calculate_metrics
+from algoforge.backtest.monte_carlo import run_monte_carlo_drawdown
+from algoforge.backtest.wfo import generate_expanding_windows
+from algoforge.backtest.engine import BacktestEngine
+from algoforge.paper.config import PaperTradingConfig
 
 
-def _make_candles(
-    n: int = 50, start_price: float = 100.0, trend: float = 0.1,
-    symbol: str = "TEST",
-) -> list[OHLCV]:
-    """Generate synthetic candle data."""
-    import numpy as np
-    np.random.seed(42)
-    candles = []
-    price = start_price
-    for i in range(n):
-        price += trend + np.random.randn() * 0.5
-        o = price
-        h = price + abs(np.random.randn()) * 0.5
-        l = price - abs(np.random.randn()) * 0.5
-        c = price + np.random.randn() * 0.3
-        h = max(h, o, c)
-        l = min(l, o, c)
-        candles.append(OHLCV(
-            symbol=symbol, timeframe=Timeframe.D1,
-            timestamp=datetime(2024, 1, 1 + i % 28, tzinfo=timezone.utc),
-            open=round(o, 2), high=round(h, 2), low=round(l, 2),
-            close=round(c, 2), volume=100000.0,
-        ))
-    return candles
+def test_max_drawdown():
+    """Test max drawdown calculation on equity curve."""
+    equity = pd.Series([100.0, 110.0, 99.0, 95.0, 105.0, 120.0, 108.0])
+    # Peak is 110. Trough is 95. Drawdown = (110 - 95) / 110 = 15 / 110 = 0.13636
+    # Later peak is 120. Trough is 108. Drawdown = (120 - 108) / 120 = 0.1
+    # Max DD should be 0.13636
+    dd = calculate_max_drawdown(equity)
+    assert pytest.approx(dd, 0.001) == 0.13636
 
 
-def _buy_every_10_bars(bar_index: int, candle: OHLCV, history: list[OHLCV]) -> list[Signal]:
-    """Simple test strategy: buy every 10 bars."""
-    if bar_index % 10 == 5 and bar_index > 5:
-        return [Signal(
-            symbol=candle.symbol, direction=Direction.LONG,
-            strategy="test_10bar", confidence=0.7,
-            entry_price=candle.close,
-            stop_loss=round(candle.close * 0.95, 2),
-            take_profit=round(candle.close * 1.10, 2),
-            timeframe=Timeframe.D1, regime=MarketRegime.TRENDING,
-        )]
-    return []
+def test_calculate_metrics():
+    """Test comprehensive metrics including the Sharpe haircut."""
+    # Synthesize daily returns of +0.1% every day except one -1.0% day
+    returns = [0.001] * 200 + [-0.01] + [0.001] * 51
+    # 252 days total. Mean = roughly 0.000956. StdDev = roughly 0.00078
+    
+    equity_vals = [100000.0]
+    for r in returns:
+        equity_vals.append(equity_vals[-1] * (1 + r))
+    
+    equity_series = pd.Series(equity_vals)
+    
+    # Fake trades
+    t1 = TradePnL("1", "AAPL", "long", 100, 110, 10, 100, 0.1, datetime.now(), datetime.now())
+    t2 = TradePnL("2", "TSLA", "long", 200, 180, 10, -200, -0.1, datetime.now(), datetime.now())
+    t3 = TradePnL("3", "MSFT", "short", 300, 290, 10, 100, 0.033, datetime.now(), datetime.now())
+    
+    metrics = calculate_metrics([t1, t2, t3], equity_series, 100000.0)
+    
+    assert metrics.total_trades == 3
+    assert metrics.win_rate == 2/3
+    assert metrics.profit_factor == 1.0  # (100+100) / 200
+    assert metrics.expectancy == 0.0     # (100 - 200 + 100) / 3
+    
+    # Raw sharpe vs Haircut sharpe (Haircut must be exactly half)
+    assert metrics.sharpe_ratio == pytest.approx(metrics.raw_sharpe_ratio / 2.0)
 
 
-class TestBacktestMetrics:
-    """Test metrics calculation."""
-
-    def test_from_empty_trades(self) -> None:
-        m = BacktestMetrics.from_trades([], [100000], 100000)
-        assert m.total_trades == 0
-        assert m.final_equity == 100000
-
-    def test_win_rate(self) -> None:
-        from algoforge.execution.paper import TradeRecord
-        now = datetime.now(timezone.utc)
-        trades = [
-            TradeRecord(id="1", symbol="T", direction=Direction.LONG, strategy="t",
-                       entry_price=100, exit_price=110, quantity=10,
-                       entry_time=now, exit_time=now, pnl=100, commission=1, slippage=0.1),
-            TradeRecord(id="2", symbol="T", direction=Direction.LONG, strategy="t",
-                       entry_price=100, exit_price=95, quantity=10,
-                       entry_time=now, exit_time=now, pnl=-50, commission=1, slippage=0.1),
-        ]
-        m = BacktestMetrics.from_trades(trades, [100000, 100100, 100050], 100000)
-        assert m.total_trades == 2
-        assert m.winning_trades == 1
-        assert m.win_rate == 0.5
-
-    def test_profit_factor(self) -> None:
-        from algoforge.execution.paper import TradeRecord
-        now = datetime.now(timezone.utc)
-        trades = [
-            TradeRecord(id="1", symbol="T", direction=Direction.LONG, strategy="t",
-                       entry_price=100, exit_price=110, quantity=10,
-                       entry_time=now, exit_time=now, pnl=200, commission=1, slippage=0.1),
-            TradeRecord(id="2", symbol="T", direction=Direction.LONG, strategy="t",
-                       entry_price=100, exit_price=95, quantity=10,
-                       entry_time=now, exit_time=now, pnl=-100, commission=1, slippage=0.1),
-        ]
-        m = BacktestMetrics.from_trades(trades, [100000, 100200, 100100], 100000)
-        assert m.profit_factor == 2.0
-
-    def test_max_drawdown(self) -> None:
-        from algoforge.execution.paper import TradeRecord
-        now = datetime.now(timezone.utc)
-        trades = [
-            TradeRecord(id="1", symbol="T", direction=Direction.LONG, strategy="t",
-                       entry_price=100, exit_price=95, quantity=10,
-                       entry_time=now, exit_time=now, pnl=-50, commission=1, slippage=0.1),
-        ]
-        curve = [100000, 102000, 98000, 99000, 101000]
-        # Peak=102000, trough=98000, DD=3.92%
-        m = BacktestMetrics.from_trades(trades, curve, 100000)
-        assert m.max_drawdown_pct > 0.03
+def test_monte_carlo():
+    """Test monte carlo trade sequence shuffling."""
+    # 10 trades, 8 wins of 100, 2 losses of 500
+    trades = []
+    for i in range(8):
+        trades.append(TradePnL(str(i), "A", "long", 1, 1, 1, 100, 0.1, datetime.now(), datetime.now()))
+    for i in range(2):
+        trades.append(TradePnL(f"l_{i}", "A", "long", 1, 1, 1, -500, -0.1, datetime.now(), datetime.now()))
+        
+    # If the 2 losses happen back-to-back at the start, max DD is roughly 1000/capital.
+    # If they are separated by wins, max DD is lower.
+    mc_result = run_monte_carlo_drawdown(trades, 10000.0, num_simulations=500)
+    
+    assert mc_result is not None
+    assert mc_result.num_simulations == 500
+    # P95 should represent a sequence where losses cluster
+    # P5 should represent a sequence where losses are perfectly spaced
+    assert mc_result.p95_drawdown_pct >= mc_result.p50_drawdown_pct
+    assert mc_result.p50_drawdown_pct >= mc_result.p5_drawdown_pct
 
 
-class TestBacktestEngine:
-    """Test backtesting engine."""
+def test_expanding_windows():
+    """Test WFO expanding window generator."""
+    df = pd.DataFrame({'Close': range(100)})
+    
+    # Train 40, Test 20
+    folds = list(generate_expanding_windows(df, train_size_bars=40, test_size_bars=20))
+    
+    assert len(folds) == 3
+    
+    # Fold 1: Train 0-40, Test 40-60
+    t1, v1 = folds[0]
+    assert len(t1) == 40
+    assert len(v1) == 20
+    assert t1.index[-1] == 39
+    assert v1.index[0] == 40
+    
+    # Fold 2: Train 0-60, Test 60-80
+    t2, v2 = folds[1]
+    assert len(t2) == 60
+    assert len(v2) == 20
+    
+    # Fold 3: Train 0-80, Test 80-100
+    t3, v3 = folds[2]
+    assert len(t3) == 80
+    assert len(v3) == 20
 
-    def test_run_no_strategies(self) -> None:
-        """Backtest with no strategies → no trades, capital preserved."""
-        engine = BacktestEngine(initial_capital=100_000)
-        candles = _make_candles(20)
-        metrics = engine.run(candles)
-        assert metrics.total_trades == 0
-        assert metrics.final_equity == 100_000
 
-    def test_run_with_strategy(self) -> None:
-        """Backtest with simple strategy generates trades."""
-        cfg = RiskConfig(max_open_positions=10, max_position_size_pct=0.5)
-        engine = BacktestEngine(initial_capital=100_000, risk_config=cfg)
-        engine.add_strategy(_buy_every_10_bars)
-        candles = _make_candles(50, trend=0.2)
-        metrics = engine.run(candles)
-        # Should have some trades from bars 15, 25, 35, 45
-        assert metrics.total_trades >= 0  # At least runs without error
-
-    def test_no_lookahead_bias(self) -> None:
-        """BACK-07: Signals execute on NEXT bar's open."""
-        executed_entries: list[float] = []
-        original_submit = None
-
-        engine = BacktestEngine(initial_capital=100_000)
-
-        def track_strategy(bar_index, candle, history):
-            if bar_index == 5:
-                return [Signal(
-                    symbol=candle.symbol, direction=Direction.LONG,
-                    strategy="track", confidence=0.7,
-                    entry_price=candle.close,  # Signal at bar 5's close
-                    stop_loss=round(candle.close * 0.90, 2),
-                    take_profit=round(candle.close * 1.20, 2),
-                    timeframe=Timeframe.D1, regime=MarketRegime.TRENDING,
-                )]
-            return []
-
-        engine.add_strategy(track_strategy)
-        candles = _make_candles(20, trend=0.1)
-        metrics = engine.run(candles)
-        # Strategy generates at bar 5 but executes at bar 6's open
-        # No direct assertion on fill price here — architecture ensures it
-
-    def test_equity_curve_recorded(self) -> None:
-        """Equity curve has one entry per bar + initial."""
-        engine = BacktestEngine(initial_capital=100_000)
-        candles = _make_candles(30)
-        engine.run(candles)
-        assert len(engine.equity_curve) == 31  # initial + 30 bars
-
-    def test_metrics_has_ratios(self) -> None:
-        """Metrics include Sharpe, Sortino, Calmar."""
-        from algoforge.execution.paper import TradeRecord
-        now = datetime.now(timezone.utc)
-        trades = [
-            TradeRecord(id="1", symbol="T", direction=Direction.LONG, strategy="t",
-                       entry_price=100, exit_price=110, quantity=10,
-                       entry_time=now, exit_time=now, pnl=100, commission=1, slippage=0.1),
-        ]
-        curve = [100000 + i * 50 for i in range(100)]
-        m = BacktestMetrics.from_trades(trades, curve, 100000)
-        assert isinstance(m.sharpe_ratio, float)
-        assert isinstance(m.sortino_ratio, float)
-        assert isinstance(m.calmar_ratio, float)
-
-    def test_trade_history_accessible(self) -> None:
-        engine = BacktestEngine(initial_capital=100_000)
-        candles = _make_candles(10)
-        engine.run(candles)
-        assert isinstance(engine.trade_history, list)
-
-    def test_event_driven_one_bar_at_a_time(self) -> None:
-        """BACK-01: Verify processing is sequential."""
-        bars_seen: list[int] = []
-
-        def tracking_strategy(bar_index, candle, history):
-            bars_seen.append(bar_index)
-            assert len(history) == bar_index + 1  # Only see bars up to current
-            return []
-
-        engine = BacktestEngine(initial_capital=100_000)
-        engine.add_strategy(tracking_strategy)
-        candles = _make_candles(10)
-        engine.run(candles)
-        assert bars_seen == list(range(10))
+def test_backtest_engine_loop():
+    """Test the fast-path backtest engine execution loop."""
+    config = PaperTradingConfig(starting_capital=10000.0)
+    engine = BacktestEngine(config)
+    
+    # Mock data: 10 bars
+    dates = pd.date_range("2026-01-01", periods=10)
+    df = pd.DataFrame({
+        'Open': [100]*10,
+        'High': [105]*10,
+        'Low': [95]*10,
+        'Close': [100]*10,
+        'Volume': [1000]*10
+    }, index=dates)
+    
+    # Mock strategy logic that generates one trade at bar 5
+    def mock_strategy(row, oms):
+        closed_trades = []
+        if row.name == dates[5]:
+            closed_trades.append(
+                TradePnL("1", "AAPL", "long", 100, 110, 10, 100, 0.1, dates[0], dates[5])
+            )
+        return [], closed_trades
+        
+    result = engine.run("MockStrategy", df, mock_strategy)
+    
+    assert result.strategy_name == "MockStrategy"
+    assert result.initial_capital == 10000.0
+    assert result.final_capital == 10100.0  # 1 trade of +100
+    assert len(result.trades) == 1
+    assert len(result.equity_curve) == 10
+    
+    # Since only 1 trade, monte carlo should be skipped
+    assert result.monte_carlo is None
