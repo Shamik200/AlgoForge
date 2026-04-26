@@ -156,3 +156,110 @@ class GBMRegressor:
         if self._model is None:
             raise RuntimeError("Model not trained. Call fit() first.")
         return self._model.predict(X)
+
+
+# ---------------------------------------------------------------------------
+# Legacy ML classes (used by the existing orchestrator pipeline)
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class MLPrediction:
+    """Prediction output from a single ML model."""
+    model_name: str = ""
+    confidence_adjustment: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class DummyTrendModel:
+    """A simple heuristic model that adjusts confidence based on ADX/RSI."""
+
+    name: str = "dummy_trend"
+
+    def predict(self, features: dict[str, float]) -> MLPrediction:
+        """Predict confidence adjustment from indicator features.
+
+        Args:
+            features: Dict of indicator values (e.g., adx, rsi).
+
+        Returns:
+            MLPrediction with confidence adjustment in [-0.3, 0.3].
+        """
+        adx = features.get("adx", 25)
+        rsi = features.get("rsi", 50)
+
+        # Strong trend (high ADX) → boost confidence
+        adj = 0.0
+        if adx > 30:
+            adj += (adx - 30) / 100  # +0.01 per ADX point above 30
+        elif adx < 20:
+            adj -= (20 - adx) / 100
+
+        # Extreme RSI → reduce confidence (reversal risk)
+        if rsi > 70 or rsi < 30:
+            adj -= 0.05
+
+        adj = max(-0.3, min(0.3, adj))
+        return MLPrediction(model_name=self.name, confidence_adjustment=adj)
+
+
+class EnsembleML:
+    """Ensemble of ML models for signal enhancement.
+
+    Combines predictions from multiple models using weighted averaging,
+    then applies the aggregate adjustment to signal confidence scores.
+    """
+
+    def __init__(self, max_adjustment: float = 0.15) -> None:
+        self.max_adjustment = max_adjustment
+        self._models: list[tuple[Any, float]] = []  # (model, weight)
+
+    @property
+    def model_count(self) -> int:
+        return len(self._models)
+
+    def add_model(self, model: Any, weight: float = 1.0) -> None:
+        """Add a model to the ensemble."""
+        self._models.append((model, weight))
+
+    def enhance_signals(self, signals: list, features: dict) -> list:
+        """Apply ML enhancement to a list of signals.
+
+        Args:
+            signals: List of Signal objects.
+            features: Dict of indicator features for ML models.
+
+        Returns:
+            List of signals with adjusted confidence scores.
+        """
+        if not self._models:
+            return signals
+
+        # Get weighted average adjustment
+        total_weight = sum(w for _, w in self._models)
+        if total_weight == 0:
+            return signals
+
+        weighted_adj = 0.0
+        for model, weight in self._models:
+            pred = model.predict(features)
+            weighted_adj += pred.confidence_adjustment * weight
+        weighted_adj /= total_weight
+
+        # Cap adjustment
+        weighted_adj = max(-self.max_adjustment, min(self.max_adjustment, weighted_adj))
+
+        # Apply to all signals
+        enhanced = []
+        for sig in signals:
+            new_conf = max(0.0, min(1.0, sig.confidence + weighted_adj))
+            # Create a copy with updated confidence
+            from copy import copy
+            new_sig = copy(sig)
+            new_sig.confidence = new_conf
+            enhanced.append(new_sig)
+
+        return enhanced
