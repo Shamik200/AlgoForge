@@ -1,152 +1,158 @@
-"""ML/DL/RL Model Integration — Enhancement layer.
+"""LightGBM model wrappers with HFT-optimized hyperparameters.
 
-ML models are OPTIONAL enhancement layers, NOT replacements for
-rule-based strategies. They adjust confidence scores but never
-override risk management veto.
-
-Requirements: ML-01 to ML-05
+LightGBM is the workhorse of modern quantitative finance.
+These wrappers use conservative hyperparameters designed to prevent overfitting
+on noisy financial data.
 """
 
-from __future__ import annotations
-
-from abc import ABC, abstractmethod
-from typing import Any
-
 import numpy as np
-import structlog
-from pydantic import BaseModel, Field
-
-from algoforge.core.models import Signal
-
-logger = structlog.get_logger(__name__)
 
 
-class MLPrediction(BaseModel):
-    """ML model prediction output."""
+# HFT-optimized hyperparameters (conservative to prevent overfitting)
+DEFAULT_GBM_PARAMS = {
+    "n_estimators": 500,
+    "num_leaves": 31,
+    "min_child_samples": 100,    # Require statistical significance
+    "feature_fraction": 0.7,     # Random feature selection per tree
+    "bagging_fraction": 0.7,     # Random sample selection per tree
+    "bagging_freq": 1,
+    "lambda_l1": 0.1,            # L1 regularization
+    "lambda_l2": 0.1,            # L2 regularization
+    "learning_rate": 0.05,
+    "verbose": -1,
+}
 
-    model_name: str
-    confidence_adjustment: float = Field(default=0.0, ge=-0.3, le=0.3)
-    predicted_direction: str = ""  # "long", "short", "neutral"
-    features_used: list[str] = Field(default_factory=list)
-    model_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
 
+class GBMClassifier:
+    """LightGBM-based 3-class classifier for trade direction.
 
-class MLModel(ABC):
-    """Abstract base for ML enhancement models.
-
-    ML-01: Models enhance, never replace rule-based signals
-    ML-02: Confidence adjustments capped at ±30%
-    ML-03: Must have fallback when model unavailable
-    ML-04: Feature extraction from indicators
-    ML-05: Online learning support
+    Predicts P(LONG), P(FLAT), P(SHORT) and converts to a signal score.
+    Falls back to sklearn's GradientBoostingClassifier if lightgbm isn't available.
     """
 
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        ...
+    def __init__(self, params: dict | None = None) -> None:
+        self.params = {**DEFAULT_GBM_PARAMS, **(params or {})}
+        self._model = None
+        self._use_lightgbm = False
 
-    @abstractmethod
-    def predict(self, features: dict[str, float]) -> MLPrediction:
-        """Generate prediction from features."""
-        ...
+        try:
+            import lightgbm as lgb
+            self._lgb = lgb
+            self._use_lightgbm = True
+        except ImportError:
+            from sklearn.ensemble import GradientBoostingClassifier
+            self._sklearn_cls = GradientBoostingClassifier
+            self._use_lightgbm = False
 
-    def is_available(self) -> bool:
-        """Check if model is loaded and ready."""
-        return True
+    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
+        """Train the classifier.
 
-
-class EnsembleML:
-    """Ensemble of ML models for signal enhancement.
-
-    Aggregates predictions from multiple models and applies
-    a weighted average confidence adjustment.
-
-    Usage:
-        ensemble = EnsembleML()
-        ensemble.add_model(model, weight=1.0)
-        enhanced = ensemble.enhance_signals(signals, features)
-    """
-
-    def __init__(self, max_adjustment: float = 0.2) -> None:
-        self._models: list[tuple[MLModel, float]] = []
-        self._max_adj = max_adjustment
-
-    def add_model(self, model: MLModel, weight: float = 1.0) -> None:
-        """Add a model to the ensemble."""
-        self._models.append((model, weight))
-
-    def enhance_signals(
-        self, signals: list[Signal], features: dict[str, float],
-    ) -> list[Signal]:
-        """Enhance signals with ML predictions.
-
-        ML-01: Enhancement only — never creates new signals.
-        ML-02: Adjustments capped.
-        ML-03: Graceful degradation when models unavailable.
+        Args:
+            X: Feature matrix (n_samples, n_features).
+            y: Labels array {-1, 0, +1}.
         """
-        if not self._models:
-            return signals
+        if self._use_lightgbm:
+            self._model = self._lgb.LGBMClassifier(**self.params)
+            self._model.fit(X, y)
+        else:
+            self._model = self._sklearn_cls(
+                n_estimators=min(self.params["n_estimators"], 200),
+                max_depth=5,
+                learning_rate=self.params["learning_rate"],
+                min_samples_leaf=self.params["min_child_samples"],
+            )
+            self._model.fit(X, y)
 
-        enhanced = []
-        for sig in signals:
-            total_adj = 0.0
-            total_weight = 0.0
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        """Predict class probabilities.
 
-            for model, weight in self._models:
-                if not model.is_available():
-                    continue
+        Args:
+            X: Feature matrix.
 
-                try:
-                    pred = model.predict(features)
-                    total_adj += pred.confidence_adjustment * weight
-                    total_weight += weight
-                except Exception as e:
-                    logger.warning("ml_model_error", model=model.name, error=str(e))
+        Returns:
+            Array of shape (n_samples, n_classes) with probabilities.
+        """
+        if self._model is None:
+            raise RuntimeError("Model not trained. Call fit() first.")
+        return self._model.predict_proba(X)
 
-            if total_weight > 0:
-                avg_adj = total_adj / total_weight
-                # ML-02: Cap the adjustment
-                capped = max(-self._max_adj, min(self._max_adj, avg_adj))
-                new_conf = max(0.1, min(0.95, sig.confidence + capped))
-                enhanced.append(sig.model_copy(update={"confidence": new_conf}))
-            else:
-                # ML-03: Fallback when no models available
-                enhanced.append(sig)
+    def predict_signal(self, X: np.ndarray) -> np.ndarray:
+        """Convert probabilities to a signal score in [-1.0, +1.0].
 
-        logger.info(
-            "ml_enhance",
-            input_count=len(signals),
-            models_active=sum(1 for m, _ in self._models if m.is_available()),
-        )
-        return enhanced
+        Signal = P(LONG) - P(SHORT). P(FLAT) acts as a dampener.
+
+        Args:
+            X: Feature matrix.
+
+        Returns:
+            Array of signal scores.
+        """
+        proba = self.predict_proba(X)
+        classes = list(self._model.classes_)
+
+        long_idx = classes.index(1) if 1 in classes else None
+        short_idx = classes.index(-1) if -1 in classes else None
+
+        p_long = proba[:, long_idx] if long_idx is not None else np.zeros(len(X))
+        p_short = proba[:, short_idx] if short_idx is not None else np.zeros(len(X))
+
+        return p_long - p_short
 
     @property
-    def model_count(self) -> int:
-        return len(self._models)
+    def feature_importance(self) -> np.ndarray | None:
+        """Get feature importance (gain-based)."""
+        if self._model is None:
+            return None
+        if self._use_lightgbm:
+            return self._model.feature_importances_
+        return self._model.feature_importances_
 
 
-class DummyTrendModel(MLModel):
-    """Simple trend-following model for testing."""
+class GBMRegressor:
+    """LightGBM-based regressor for return magnitude prediction."""
 
-    @property
-    def name(self) -> str:
-        return "dummy_trend"
+    def __init__(self, params: dict | None = None) -> None:
+        self.params = {**DEFAULT_GBM_PARAMS, **(params or {})}
+        self._model = None
+        self._use_lightgbm = False
 
-    def predict(self, features: dict[str, float]) -> MLPrediction:
-        adx = features.get("adx", 20)
-        rsi = features.get("rsi", 50)
+        try:
+            import lightgbm as lgb
+            self._lgb = lgb
+            self._use_lightgbm = True
+        except ImportError:
+            from sklearn.ensemble import GradientBoostingRegressor
+            self._sklearn_reg = GradientBoostingRegressor
+            self._use_lightgbm = False
 
-        # Higher ADX → higher confidence boost
-        adj = (adx - 25) / 100  # 25 ADX → 0 adj, 35 → +0.1
-        adj = max(-0.1, min(0.1, adj))
+    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
+        """Train the regressor.
 
-        direction = "long" if rsi < 50 else "short"
+        Args:
+            X: Feature matrix.
+            y: Continuous target (forward returns).
+        """
+        if self._use_lightgbm:
+            self._model = self._lgb.LGBMRegressor(**self.params)
+            self._model.fit(X, y)
+        else:
+            self._model = self._sklearn_reg(
+                n_estimators=min(self.params["n_estimators"], 200),
+                max_depth=5,
+                learning_rate=self.params["learning_rate"],
+                min_samples_leaf=self.params["min_child_samples"],
+            )
+            self._model.fit(X, y)
 
-        return MLPrediction(
-            model_name=self.name,
-            confidence_adjustment=adj,
-            predicted_direction=direction,
-            features_used=["adx", "rsi"],
-            model_confidence=0.6,
-        )
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Predict return magnitudes.
+
+        Args:
+            X: Feature matrix.
+
+        Returns:
+            Array of predicted returns.
+        """
+        if self._model is None:
+            raise RuntimeError("Model not trained. Call fit() first.")
+        return self._model.predict(X)
