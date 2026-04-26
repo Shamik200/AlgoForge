@@ -10,8 +10,8 @@ from algoforge.core.constants import Direction, MarketRegime, Timeframe
 from algoforge.core.models import Signal
 from algoforge.core.orchestrator import Orchestrator
 from algoforge.execution.paper import PaperTradingEngine
-from algoforge.fundamental.analysis import FundamentalSnapshot, Sentiment
-from algoforge.ml.models import DummyTrendModel, EnsembleML, MLPrediction
+from algoforge.execution.paper import PaperTradingEngine
+from algoforge.fundamental.pipeline import FundamentalResult
 from algoforge.monitoring.dashboard import Dashboard, DashboardSnapshot, StrategyMetrics
 from algoforge.risk.manager import RiskConfig, RiskManager
 from algoforge.strategies.secondary_trending_range import EMACrossover
@@ -33,44 +33,7 @@ def _sig(direction=Direction.LONG, confidence=0.7):
 # ML Integration
 # ---------------------------------------------------------------------------
 
-class TestMLModels:
-    def test_dummy_trend_model(self) -> None:
-        m = DummyTrendModel()
-        assert m.name == "dummy_trend"
-        pred = m.predict({"adx": 30, "rsi": 40})
-        assert isinstance(pred, MLPrediction)
-        assert -0.3 <= pred.confidence_adjustment <= 0.3
-
-    def test_ensemble_empty(self) -> None:
-        ens = EnsembleML()
-        sigs = [_sig()]
-        result = ens.enhance_signals(sigs, {})
-        assert len(result) == 1
-        assert result[0].confidence == 0.7  # Unchanged
-
-    def test_ensemble_enhancement(self) -> None:
-        ens = EnsembleML()
-        ens.add_model(DummyTrendModel(), weight=1.0)
-        sigs = [_sig(confidence=0.6)]
-        result = ens.enhance_signals(sigs, {"adx": 35, "rsi": 40})
-        assert len(result) == 1
-        # ADX 35 → adj = +0.1, so confidence should adjust
-        assert result[0].confidence != 0.6
-
-    def test_ensemble_cap(self) -> None:
-        """ML-02: Adjustments capped at max_adjustment."""
-        ens = EnsembleML(max_adjustment=0.05)
-        ens.add_model(DummyTrendModel(), weight=1.0)
-        sigs = [_sig(confidence=0.5)]
-        result = ens.enhance_signals(sigs, {"adx": 50, "rsi": 40})
-        # Even with high ADX, adjustment capped at 0.05
-        assert abs(result[0].confidence - 0.5) <= 0.05 + 0.001
-
-    def test_model_count(self) -> None:
-        ens = EnsembleML()
-        assert ens.model_count == 0
-        ens.add_model(DummyTrendModel())
-        assert ens.model_count == 1
+# Removed legacy EnsembleML tests
 
 
 # ---------------------------------------------------------------------------
@@ -194,16 +157,21 @@ class TestOrchestrator:
         assert orch.paper_engine.equity == 50_000
 
     def test_fundamental_filtering(self) -> None:
-        """Fundamentals block signal when earnings pending."""
+        """Fundamentals block signal when gate score is too low."""
         orch = Orchestrator(
             strategies=[EMACrossover(min_adx=15)],
             enable_fundamentals=True,
         )
-        fund = {"TEST": FundamentalSnapshot(symbol="TEST", has_earnings_soon=True)}
+        # Pass a low gate_score to simulate a fundamental block
+        fund = FundamentalResult(
+            symbol="TEST",
+            gate_score=10,  # Below threshold
+            sentiment=None, screener=None, macro=None, selections=[]
+        )
         results = orch.process_bar(
             "TEST", Timeframe.D1, self._indicators(), self._structure(),
             self._regime(), [100.0]*60, [101.0]*60, [99.0]*60,
-            [50000.0]*60, [100.0]*60, fundamentals=fund,
+            [50000.0]*60, [100.0]*60, fundamental_result=fund,
         )
         # Signals should be blocked by fundamental filter
         assert orch.stats["signals_filled"] == 0

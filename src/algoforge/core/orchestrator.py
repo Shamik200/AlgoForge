@@ -21,8 +21,8 @@ from algoforge.combination.engine import CombinationEngine
 from algoforge.core.constants import MarketRegime, Timeframe
 from algoforge.core.models import Signal
 from algoforge.execution.paper import FillResult, PaperTradingEngine
-from algoforge.fundamental.analysis import FundamentalFilter, FundamentalSnapshot
-from algoforge.ml.models import EnsembleML
+from algoforge.fundamental.pipeline import FundamentalPipeline, FundamentalResult
+from algoforge.ml.ensemble import StackingEnsemble
 from algoforge.risk.manager import RiskConfig
 from algoforge.signals.models import SignalResult
 from algoforge.strategies.base import Strategy
@@ -58,9 +58,9 @@ class Orchestrator:
     ) -> None:
         self._strategies = strategies or []
         self._paper = PaperTradingEngine(initial_capital=capital, risk_config=risk_config)
-        self._fundamental = FundamentalFilter() if enable_fundamentals else None
+        self._fundamental = FundamentalPipeline() if enable_fundamentals else None
         self._dual_tf = DualTimeframeFilter() if enable_dual_tf else None
-        self._ml = EnsembleML() if enable_ml else None
+        self._ml = StackingEnsemble() if enable_ml else None
         self._combination = CombinationEngine() if enable_combination else None
         self._regime_classifier = RegimeClassifier()
         self._signals_generated = 0
@@ -96,7 +96,7 @@ class Orchestrator:
         lows: list[float],
         volumes: list[float],
         opens: list[float],
-        fundamentals: dict[str, FundamentalSnapshot] | None = None,
+        fundamental_result: FundamentalResult | None = None,
         htf_structure: StructuralSnapshot | None = None,
         htf_regime: MarketRegime | None = None,
         ml_features: dict[str, float] | None = None,
@@ -167,10 +167,12 @@ class Orchestrator:
         if not raw_signals:
             return results
 
-        # Step 3: Fundamental filter
+        # Step 3: Fundamental filter (AUDIT FIX: Uses new Pipeline logic)
         filtered = raw_signals
-        if self._fundamental and fundamentals:
-            filtered = self._fundamental.filter(filtered, fundamentals)
+        if self._fundamental and fundamental_result:
+            if not self._fundamental.should_allow_trading(fundamental_result):
+                logger.debug("fundamental_skip", symbol=symbol)
+                return results  # Trading blocked by fundamental gate
 
         # Step 4: Dual timeframe filter
         if self._dual_tf and htf_structure and htf_regime:

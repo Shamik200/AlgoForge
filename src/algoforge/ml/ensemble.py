@@ -129,3 +129,49 @@ class StackingEnsemble:
             class_proba = padded
         return_pred = self.regressor.predict(X).reshape(-1, 1)  # (n, 1)
         return np.hstack([class_proba, return_pred])
+
+    def enhance_signals(self, signals: list, features: dict[str, float]) -> list:
+        """Enhance signals based on StackingEnsemble prediction.
+        
+        Args:
+            signals: List of Signal objects.
+            features: Dictionary of raw features.
+            
+        Returns:
+            List of modified signals.
+        """
+        if not self._is_trained or not signals:
+            return signals
+            
+        from algoforge.ml.features import FeatureBuilder
+        from algoforge.core.constants import Direction
+        import copy
+        
+        # Build feature vector
+        # Fallback to zeros if dict is missing keys to prevent crashing
+        X = FeatureBuilder.build(**features) if features else np.zeros((1, 50))
+        
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+            
+        # Predict direction [-1.0 to 1.0]
+        score = float(self.predict(X)[0])
+        
+        # If score > 0, model leans LONG. If score < 0, model leans SHORT.
+        # Max adjustment is 0.15 for confidence
+        max_adj = 0.15
+        
+        enhanced = []
+        for sig in signals:
+            new_sig = copy.copy(sig)
+            
+            # Apply adjustment
+            if sig.direction == Direction.LONG:
+                adj = score * max_adj
+            else:
+                adj = -score * max_adj
+                
+            new_sig.confidence = max(0.0, min(1.0, sig.confidence + adj))
+            enhanced.append(new_sig)
+            
+        return enhanced
