@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 21 → ✅ COMPLETE
-**Status:** Executed — Dashboard & Monitoring
-**Goal:** Production-grade Next.js monitoring dashboard with FastAPI WebSocket backend.
-**Context:** 6-panel dark trading terminal: P&L, positions, HMM regime, signal health, conviction weights, kill switch.
-**Plans:** executed inline | **Tests:** 573/573 passing
+**Phase:** 22 → ✅ COMPLETE — **MILESTONE 1 COMPLETE**
+**Status:** Executed — Live Trading Bridge & Production
+**Goal:** Broker adapter interface, gradual deployment, Prometheus metrics, Docker Compose stack.
+**Context:** BrokerAdapter ABC + Alpaca placeholder, capital scaling thresholds, Prometheus exposition format, 6-service Docker Compose.
+**Plans:** executed inline | **Tests:** 583/583 passing
 
 ## Progress
 
@@ -40,7 +40,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 19 | Fundamental Analysis Module (LangGraph) | ✅ Complete (2026-04-26) | inline |
 | 20 | ML/DL/RL Pipeline | ✅ Complete (2026-04-26) | inline |
 | 21 | Dashboard & Monitoring | ✅ Complete (2026-04-26) | inline |
-| 22 | Live Trading Bridge & Production | ⬜ Not started | 0 |
+| 22 | Live Trading Bridge & Production | ✅ Complete (2026-04-26) | inline |
 
 ## Decisions Log
 
@@ -114,6 +114,8 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-26 | Purged walk-forward CV (López de Prado) + two-layer stacking ensemble | 20 |
 | 2026-04-26 | FastAPI WebSocket dashboard server with kill switch and state snapshots | 21 |
 | 2026-04-26 | 6-panel Next.js trading terminal with dark glassmorphism theme | 21 |
+| 2026-04-26 | BrokerAdapter ABC with Alpaca placeholder, gradual capital scaling | 22 |
+| 2026-04-26 | Prometheus metrics, Dockerfile, Docker Compose (6-service stack) | 22 |
 
 ---
-*Last updated: 2026-04-26 — Phase 21 complete — 573 tests — advancing to Phase 22*
+*Last updated: 2026-04-26 — 🎉 MILESTONE 1 COMPLETE — All 22 phases done — 583 tests passing*
