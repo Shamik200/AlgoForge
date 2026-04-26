@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 ## Current Phase
 
-**Phase:** 20 → ✅ COMPLETE
-**Status:** Executed — ML/DL/RL Pipeline
-**Goal:** HFT-grade ML enhancement layer with LightGBM, purged walk-forward CV, and two-layer stacking ensemble.
-**Context:** 44-feature engineering, ATR-adaptive labels, López de Prado purged CV, GBM classifier+regressor → LogReg meta-model.
-**Plans:** executed inline | **Tests:** 564/564 passing
+**Phase:** 21 → ✅ COMPLETE
+**Status:** Executed — Dashboard & Monitoring
+**Goal:** Production-grade Next.js monitoring dashboard with FastAPI WebSocket backend.
+**Context:** 6-panel dark trading terminal: P&L, positions, HMM regime, signal health, conviction weights, kill switch.
+**Plans:** executed inline | **Tests:** 573/573 passing
 
 ## Progress
 
@@ -39,7 +39,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 18 | Pairs & Cointegration Trading | ✅ Complete (2026-04-25) | inline |
 | 19 | Fundamental Analysis Module (LangGraph) | ✅ Complete (2026-04-26) | inline |
 | 20 | ML/DL/RL Pipeline | ✅ Complete (2026-04-26) | inline |
-| 21 | Dashboard & Monitoring | ⬜ Not started | 0 |
+| 21 | Dashboard & Monitoring | ✅ Complete (2026-04-26) | inline |
 | 22 | Live Trading Bridge & Production | ⬜ Not started | 0 |
 
 ## Decisions Log
@@ -112,6 +112,8 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 | 2026-04-26 | Gate score mechanism blocking technically valid but fundamentally broken trades | 19 |
 | 2026-04-26 | 44-feature engineering with cyclical time, cross-asset, and microstructure features | 20 |
 | 2026-04-26 | Purged walk-forward CV (López de Prado) + two-layer stacking ensemble | 20 |
+| 2026-04-26 | FastAPI WebSocket dashboard server with kill switch and state snapshots | 21 |
+| 2026-04-26 | 6-panel Next.js trading terminal with dark glassmorphism theme | 21 |
 
 ---
-*Last updated: 2026-04-26 — Phase 20 complete — 564 tests — advancing to Phase 21*
+*Last updated: 2026-04-26 — Phase 21 complete — 573 tests — advancing to Phase 22*
