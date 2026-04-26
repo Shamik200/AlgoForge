@@ -52,41 +52,88 @@ class BacktestEngine:
         current_capital = self.config.starting_capital
 
         for index, row in dataframe.iterrows():
-            # 1. Update Market Prices & Process Fills
-            current_price = float(row['Close'])
-            high = float(row['High'])
-            low = float(row['Low'])
             timestamp = pd.Timestamp(index)
-
-            # Paper engine evaluates active orders against the candle's High/Low
-            fills = self.paper_engine.process_tick(current_price, high, low)
-            
-            # 2. Record Fills / PnL (Simplified tracking for simulation)
-            for fill in fills:
-                # In a full integration, we'd calculate exact PnL by matching entry and exit fills.
-                # For this backtester shell, we assume the `strategy_logic` manages open positions
-                # and returns a completed TradePnL when an exit occurs.
-                # Here we just deduct the friction from our current running capital.
-                current_capital -= fill.total_friction
-
-            # 3. Ask Strategy for new orders / closed trades
-            # This is where the strategy evaluates the current candle and active positions
-            # It returns a list of new orders to submit, and a list of closed TradePnL objects
-            new_orders, closed_trades = strategy_logic(row, self.oms)
-            
-            for order in new_orders:
-                self.oms.submit_order(order)
-                
-            for trade in closed_trades:
-                trade.closed_at = timestamp
-                self.executed_trades.append(trade)
-                # Add the trade's PnL to our running equity
-                current_capital += trade.pnl_amount
+            current_capital = self._process_bar(row, timestamp, current_capital, strategy_logic)
 
             # 4. Record daily equity
             self.equity_values.append(current_capital)
             self.timestamps.append(timestamp)
 
+        return self._finalize_results(strategy_name, current_capital)
+
+    def run_walk_forward(
+        self,
+        strategy_name: str,
+        dataframe: pd.DataFrame,
+        optimizer: Any,
+        strategy_factory: Any,
+        train_window: int = 1000,
+        test_window: int = 250,
+    ) -> BacktestResult:
+        """Run walk-forward optimization backtest (OOS evaluation).
+
+        Args:
+            strategy_name: Name of the strategy.
+            dataframe: Full OHLCV DataFrame.
+            optimizer: Callable `opt(train_df)` returning optimal parameters.
+            strategy_factory: Callable `factory(params)` returning `strategy_logic`.
+            train_window: Number of bars for the IS training window.
+            test_window: Number of bars for the OOS testing window.
+        """
+        logger.info("Starting WFO: %s (Train: %d, Test: %d)", strategy_name, train_window, test_window)
+        n = len(dataframe)
+        current_capital = self.config.starting_capital
+
+        for start_idx in range(0, n - train_window, test_window):
+            train_end = start_idx + train_window
+            test_end = min(train_end + test_window, n)
+
+            if test_end - train_end < max(1, test_window // 4):
+                break  # Skip final stub if too small
+
+            train_df = dataframe.iloc[start_idx:train_end]
+            test_df = dataframe.iloc[train_end:test_end]
+
+            # 1. Optimize on In-Sample
+            best_params = optimizer(train_df)
+            
+            # 2. Build logic for Out-of-Sample
+            strategy_logic = strategy_factory(best_params)
+
+            # 3. Evaluate Out-of-Sample
+            for index, row in test_df.iterrows():
+                timestamp = pd.Timestamp(index)
+                current_capital = self._process_bar(row, timestamp, current_capital, strategy_logic)
+
+                self.equity_values.append(current_capital)
+                self.timestamps.append(timestamp)
+
+        return self._finalize_results(f"{strategy_name}_WFO", current_capital)
+
+    def _process_bar(self, row: pd.Series, timestamp: pd.Timestamp, current_capital: float, strategy_logic: Any) -> float:
+        """Process a single bar and return updated capital."""
+        current_price = float(row['Close'])
+        high = float(row['High'])
+        low = float(row['Low'])
+
+        fills = self.paper_engine.process_tick(current_price, high, low)
+        for fill in fills:
+            current_capital -= fill.total_friction
+
+        new_orders, closed_trades = strategy_logic(row, self.oms)
+        
+        for order in new_orders:
+            self.oms.submit_order(order)
+            
+        for trade in closed_trades:
+            trade.closed_at = timestamp
+            self.executed_trades.append(trade)
+            current_capital += trade.pnl_amount
+
+        return current_capital
+
+    def _finalize_results(self, strategy_name: str, final_capital: float) -> BacktestResult:
+        """Calculate metrics and return the final result object."""
         # Build equity curve series
         equity_series = pd.Series(self.equity_values, index=self.timestamps)
         
@@ -107,7 +154,7 @@ class BacktestEngine:
         return BacktestResult(
             strategy_name=strategy_name,
             initial_capital=self.config.starting_capital,
-            final_capital=current_capital,
+            final_capital=final_capital,
             metrics=metrics,
             monte_carlo=monte_carlo,
             trades=self.executed_trades,
