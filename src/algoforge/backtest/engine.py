@@ -115,8 +115,9 @@ class BacktestEngine:
         current_price = float(row['Close'])
         high = float(row['High'])
         low = float(row['Low'])
+        volume = float(row.get('Volume', 0.0))
 
-        fills = self.paper_engine.process_tick(current_price, high, low)
+        fills = self.paper_engine.process_tick(current_price, high, low, volume)
         for fill in fills:
             current_capital -= fill.total_friction
 

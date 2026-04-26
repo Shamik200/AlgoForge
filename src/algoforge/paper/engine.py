@@ -30,13 +30,14 @@ class PaperTradingEngine:
         self.oms = oms
         self.current_capital = config.starting_capital
 
-    def process_tick(self, current_price: float, high: float, low: float) -> list[FillResult]:
+    def process_tick(self, current_price: float, high: float, low: float, volume: float = 0.0) -> list[FillResult]:
         """Process a market tick (or candle close) against all active orders.
 
         Args:
             current_price: The closing/current price of the asset.
             high: The high of the candle (used for checking limit triggers).
             low: The low of the candle (used for checking limit triggers).
+            volume: The volume of the candle (for market impact).
 
         Returns:
             A list of FillResults for any orders that executed.
@@ -53,7 +54,7 @@ class PaperTradingEngine:
             if order.status not in (OrderStatus.SUBMITTED, OrderStatus.PARTIAL_FILL):
                 continue
 
-            fill_res = self._evaluate_order(order, current_price, high, low)
+            fill_res = self._evaluate_order(order, current_price, high, low, volume)
             
             if fill_res.filled:
                 try:
@@ -78,7 +79,7 @@ class PaperTradingEngine:
 
         return fills
 
-    def _evaluate_order(self, order: Order, current_price: float, high: float, low: float) -> FillResult:
+    def _evaluate_order(self, order: Order, current_price: float, high: float, low: float, volume: float) -> FillResult:
         """Determine if an order fills and calculate its execution price with friction."""
         
         is_buy = (order.direction.lower() == "long")
@@ -110,13 +111,15 @@ class PaperTradingEngine:
         )
         
         # Slippage (Only applied to Market orders)
+        # Assuming orders that close a position are exits
+        is_exit = ("stop" in order.correlation_id.lower() or "tp" in order.correlation_id.lower())
         price_after_slip, slippage_cost = simulate_slippage(
-            self.config, price_after_latency, is_buy, order.order_type
+            self.config, price_after_latency, is_buy, order.order_type, is_exit
         )
         
         # Market Impact
         final_price, impact_cost = calculate_market_impact(
-            self.config, order.quantity, price_after_slip, is_buy
+            self.config, order.quantity, price_after_slip, is_buy, volume
         )
         
         # Commissions

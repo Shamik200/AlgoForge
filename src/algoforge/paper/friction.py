@@ -77,7 +77,9 @@ def simulate_latency_drift(config: PaperTradingConfig, base_price: float, is_buy
     return drifted_price, abs(drifted_price - base_price)
 
 
-def simulate_slippage(config: PaperTradingConfig, price: float, is_buy: bool, order_type: OrderType) -> tuple[float, float]:
+def simulate_slippage(
+    config: PaperTradingConfig, price: float, is_buy: bool, order_type: OrderType, is_exit: bool = False
+) -> tuple[float, float]:
     """Simulate order slippage (adverse execution).
 
     LIMIT orders do not experience traditional market slippage, only MARKET orders do.
@@ -87,6 +89,7 @@ def simulate_slippage(config: PaperTradingConfig, price: float, is_buy: bool, or
         price: Price before slippage.
         is_buy: Whether order is BUY.
         order_type: LIMIT or MARKET.
+        is_exit: Whether this is an exit order (e.g. stop loss). Stop losses suffer worse slippage.
 
     Returns:
         Tuple of (slipped_price, slippage_cost_fiat).
@@ -94,7 +97,12 @@ def simulate_slippage(config: PaperTradingConfig, price: float, is_buy: bool, or
     if order_type == OrderType.LIMIT:
         return price, 0.0
 
-    slip = price * config.slippage_pct
+    # AUDIT FIX: Asymmetric slippage. Exits (stop losses) suffer 2x slippage.
+    base_slip = config.slippage_pct
+    if is_exit:
+        base_slip *= 2.0
+
+    slip = price * base_slip
     
     if is_buy:
         slipped_price = price + slip
@@ -104,7 +112,9 @@ def simulate_slippage(config: PaperTradingConfig, price: float, is_buy: bool, or
     return slipped_price, slip
 
 
-def calculate_market_impact(config: PaperTradingConfig, shares: float, price: float, is_buy: bool) -> tuple[float, float]:
+def calculate_market_impact(
+    config: PaperTradingConfig, shares: float, price: float, is_buy: bool, actual_volume: float | None = None
+) -> tuple[float, float]:
     """Simulate temporary market impact for large orders using square root model.
 
     Impact = coeff * sigma * sqrt(OrderSize / ADV)
@@ -115,11 +125,14 @@ def calculate_market_impact(config: PaperTradingConfig, shares: float, price: fl
         shares: Number of shares to trade.
         price: Current price.
         is_buy: Whether order is BUY.
+        actual_volume: Actual bar volume (AUDIT FIX: replaces constant ADV).
 
     Returns:
         Tuple of (impacted_price, impact_cost_fiat).
     """
-    ratio = shares / max(1.0, config.avg_daily_volume)
+    # Use actual volume if provided, else fallback to config ADV
+    vol = actual_volume if actual_volume is not None and actual_volume > 0 else config.avg_daily_volume
+    ratio = shares / max(1.0, vol)
     
     if ratio < 0.001:
         # Negligible impact for very small orders
