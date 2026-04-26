@@ -9,6 +9,7 @@ Requirements: PAPR-01 to PAPR-06
 
 from __future__ import annotations
 
+import random
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -103,6 +104,9 @@ class PaperTradingEngine:
         market: Market = Market.STOCKS_US,
         slippage_pct: float = 0.0005,
         latency_ms: float = 100.0,
+        latency_min_ms: float = 50.0,
+        latency_max_ms: float = 200.0,
+        latency_enabled: bool = True,
         risk_config: RiskConfig | None = None,
     ) -> None:
         self._initial_capital = initial_capital
@@ -110,12 +114,16 @@ class PaperTradingEngine:
         self._market = market
         self._slippage_pct = slippage_pct
         self._latency_ms = latency_ms
+        self._latency_min_ms = latency_min_ms
+        self._latency_max_ms = latency_max_ms
+        self._latency_enabled = latency_enabled
         self._risk_manager = RiskManager(capital=initial_capital, config=risk_config)
         self._positions: dict[str, Position] = {}
         self._trade_history: list[TradeRecord] = []
         self._peak_equity = initial_capital
         self._current_bar = 0
         self._prices: dict[str, float] = {}
+        self._rng = random.Random(42)
 
     @property
     def equity(self) -> float:
@@ -131,10 +139,16 @@ class PaperTradingEngine:
     def trade_history(self) -> list[TradeRecord]:
         return self._trade_history
 
+    @property
+    def risk_manager(self) -> RiskManager:
+        """Public access to the risk manager for circuit breaker / correlation updates."""
+        return self._risk_manager
+
     def submit_signal(
         self,
         signal: Signal,
         daily_volume: float | None = None,
+        conviction: float = 1.0,
     ) -> FillResult:
         """Submit a signal for paper execution.
 
@@ -150,6 +164,7 @@ class PaperTradingEngine:
             open_positions=self.open_positions,
             daily_volume=daily_volume,
             current_bar=self._current_bar,
+            conviction=conviction,
         )
 
         if not risk_result.approved:
@@ -164,6 +179,20 @@ class PaperTradingEngine:
             fill_price = signal.entry_price + slippage  # Worse fill for longs
         else:
             fill_price = signal.entry_price - slippage  # Worse fill for shorts
+
+        # Simulate latency (PAPR-03)
+        actual_latency_ms = self._latency_ms
+        if self._latency_enabled:
+            actual_latency_ms = self._rng.uniform(self._latency_min_ms, self._latency_max_ms)
+            # Price moves during latency — add additional drift proportional to delay
+            latency_drift_factor = actual_latency_ms / 1000.0  # Convert to seconds
+            # Random micro-movement: up to 0.01% per 100ms of latency
+            drift_pct = self._rng.gauss(0, 0.0001) * (actual_latency_ms / 100.0)
+            latency_impact = fill_price * drift_pct
+            if signal.direction == Direction.LONG:
+                fill_price += abs(latency_impact)  # Adverse fill for longs
+            else:
+                fill_price -= abs(latency_impact)  # Adverse fill for shorts
 
         # Calculate commission (PAPR-02)
         commission = self._calculate_commission(
@@ -215,7 +244,7 @@ class PaperTradingEngine:
             fill_price=round(fill_price, 4),
             slippage=round(slippage, 4),
             commission=round(commission, 2),
-            latency_ms=self._latency_ms,
+            latency_ms=round(actual_latency_ms, 1),
         )
 
     def update_prices(self, prices: dict[str, float]) -> None:
@@ -349,3 +378,4 @@ class PaperTradingEngine:
         self._peak_equity = self._initial_capital
         self._current_bar = 0
         self._prices.clear()
+        self._rng = random.Random(42)

@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from algoforge.core.constants import Direction
 from algoforge.core.models import Position, Signal
+from algoforge.risk.correlation import CorrelationMatrix
 
 logger = structlog.get_logger(__name__)
 
@@ -87,6 +88,7 @@ class RiskManager:
         self,
         capital: float = 100_000.0,
         config: RiskConfig | None = None,
+        sector_map: dict[str, str] | None = None,
     ) -> None:
         self._capital = capital
         self._config = config or RiskConfig()
@@ -102,6 +104,8 @@ class RiskManager:
         self._circuit_breaker_active = False
         self._session_open_prices: dict[str, float] = {}  # RISK-19
         self._trade_results: list[float] = []  # For Kelly sizing
+        self._correlation_matrix = CorrelationMatrix()
+        self._sector_map: dict[str, str] = sector_map or {}  # symbol -> sector
 
     @property
     def capital(self) -> float:
@@ -136,6 +140,8 @@ class RiskManager:
         open_positions: list[Position] | None = None,
         daily_volume: float | None = None,
         current_bar: int = 0,
+        current_prices: dict[str, float] | None = None,
+        conviction: float = 1.0,
     ) -> RiskCheckResult:
         """Validate a signal against all risk rules.
 
@@ -145,6 +151,10 @@ class RiskManager:
         self._current_bar = current_bar
         positions = open_positions or []
         reasons: list[str] = []
+
+        # RISK-19: Auto-check circuit breaker if prices provided
+        if current_prices and not self._circuit_breaker_active:
+            self.check_circuit_breaker(current_prices)
 
         # RISK-19: Circuit breaker check
         if self._circuit_breaker_active:
@@ -220,6 +230,31 @@ class RiskManager:
                 f"{self._config.max_directional_exposure_pct:.1%} limit"
             )
 
+        # RISK-07: Sector exposure limit (was config ghost, now enforced)
+        if self._sector_map and positions:
+            new_sector = self._sector_map.get(signal.symbol, "unknown")
+            sector_value = signal.entry_price  # Approx 1 share
+            for p in positions:
+                if self._sector_map.get(p.symbol, "unknown") == new_sector:
+                    sector_value += p.market_value
+            sector_pct = sector_value / self._capital if self._capital > 0 else 0
+            if sector_pct >= self._config.max_sector_exposure_pct:
+                reasons.append(
+                    f"RISK-07: Sector '{new_sector}' exposure {sector_pct:.1%} >= "
+                    f"{self._config.max_sector_exposure_pct:.1%} limit"
+                )
+
+        # RISK-10: Position correlation check (was config ghost, now enforced)
+        if not self._correlation_matrix.is_empty() and positions:
+            for p in positions:
+                corr = self._correlation_matrix.get_correlation(signal.symbol, p.symbol)
+                if abs(corr) >= self._config.max_correlation:
+                    reasons.append(
+                        f"RISK-10: Correlation({signal.symbol}, {p.symbol}) = {corr:.2f} >= "
+                        f"{self._config.max_correlation:.2f} limit"
+                    )
+                    break  # One violation is enough
+
         # RISK-18: Liquidity check
         if daily_volume is not None:
             position_size = self._calculate_position_size(signal)
@@ -242,7 +277,7 @@ class RiskManager:
             return self._reject(reasons)
 
         # --- All checks passed — calculate position size ---
-        position_size = self._calculate_position_size(signal)
+        position_size = self._calculate_position_size(signal, conviction)
         risk_amount = self._calculate_risk_amount(signal, position_size)
         position_value = position_size * signal.entry_price
 
@@ -280,11 +315,14 @@ class RiskManager:
             position_value=round(position_value, 2),
         )
 
-    def _calculate_position_size(self, signal: Signal) -> float:
+    def _calculate_position_size(self, signal: Signal, conviction: float = 1.0) -> float:
         """Calculate position size using configured method.
 
         Fixed: Position size = (Capital × Max Risk %) / Risk per share
         Kelly: Uses Kelly Criterion with fractional scaling (SIZE-01)
+
+        Dynamic adjustment: reduces size during drawdown (audit fix).
+        Conviction scaling: scales size linearly with signal conviction (audit fix).
         """
         risk_per_share = abs(signal.entry_price - signal.stop_loss)
         if risk_per_share == 0:
@@ -293,12 +331,27 @@ class RiskManager:
         if self._config.sizing_method == "kelly" and len(self._trade_results) >= 20:
             kelly_size = self._kelly_position_size(signal, risk_per_share)
             if kelly_size > 0:
-                return kelly_size
+                base_size = self._apply_dynamic_scaling(kelly_size)
+                return base_size * conviction
 
         # Default: fixed risk-per-trade method
         max_risk_amount = self._capital * self._config.max_risk_per_trade_pct
         position_size = max_risk_amount / risk_per_share
-        return position_size
+        base_size = self._apply_dynamic_scaling(position_size)
+        return base_size * conviction
+
+    def _apply_dynamic_scaling(self, base_size: float) -> float:
+        """Reduce position size during drawdown (RISK-15: dynamic adjustment).
+
+        Scale factor = 1.0 at 0% drawdown, 0.5 at half max drawdown, 0.25 at max.
+        This gradually reduces risk as losses accumulate.
+        """
+        dd = self.current_drawdown_pct
+        max_dd = self._config.max_drawdown_pct
+        if dd <= 0 or max_dd <= 0:
+            return base_size
+        scale = max(0.25, 1.0 - (dd / max_dd))
+        return base_size * scale
 
     def _kelly_position_size(self, signal: Signal, risk_per_share: float) -> float:
         """Kelly Criterion position sizing (SIZE-01).
@@ -424,6 +477,14 @@ class RiskManager:
                     return True
 
         return False
+
+    def update_correlation_matrix(self, correlation_matrix: CorrelationMatrix) -> None:
+        """Update the cached correlation matrix (call daily)."""
+        self._correlation_matrix = correlation_matrix
+
+    def update_sector_map(self, sector_map: dict[str, str]) -> None:
+        """Update symbol-to-sector mapping."""
+        self._sector_map.update(sector_map)
 
     def reset_daily(self) -> None:
         """Reset daily PnL counter (call at market open)."""

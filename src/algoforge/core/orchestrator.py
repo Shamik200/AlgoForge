@@ -1,10 +1,14 @@
 """Strategy Orchestrator — The main trading pipeline.
 
 Connects all modules: Data → Indicators → Structure → Regime →
-Fundamental → Strategies → Dual TF → ML → Risk → Execution.
+Fundamental → Strategies → Signal Families → Combination Engine →
+Dual TF → ML → Risk → Execution.
 
 This is the "brain" that drives the 3-module pipeline:
 Fundamental → Technical → Execution.
+
+AUDIT FIX: Now wires the CombinationEngine, alpha decay health
+multipliers, and circuit breaker into the main loop.
 """
 
 from __future__ import annotations
@@ -13,12 +17,14 @@ from typing import Any
 
 import structlog
 
+from algoforge.combination.engine import CombinationEngine
 from algoforge.core.constants import MarketRegime, Timeframe
 from algoforge.core.models import Signal
 from algoforge.execution.paper import FillResult, PaperTradingEngine
 from algoforge.fundamental.analysis import FundamentalFilter, FundamentalSnapshot
 from algoforge.ml.models import EnsembleML
 from algoforge.risk.manager import RiskConfig
+from algoforge.signals.models import SignalResult
 from algoforge.strategies.base import Strategy
 from algoforge.strategies.dual_timeframe import DualTimeframeFilter
 from algoforge.technical.engine import IndicatorSnapshot
@@ -36,14 +42,8 @@ class Orchestrator:
     2. Regime detection runs BEFORE strategy activation
     3. Every trade MUST have a stop loss
     4. Risk manager has absolute veto power
-
-    Usage:
-        orch = Orchestrator(strategies=[...], capital=100_000)
-        results = orch.process_bar(
-            symbol="AAPL", timeframe=Timeframe.D1,
-            indicators=ind_snap, structure=struct_snap,
-            regime_result=regime, closes=closes, ...
-        )
+    5. Signal families pass through CombinationEngine (audit fix)
+    6. Circuit breaker is checked every bar (audit fix)
     """
 
     def __init__(
@@ -54,21 +54,35 @@ class Orchestrator:
         enable_ml: bool = False,
         enable_dual_tf: bool = False,
         enable_fundamentals: bool = True,
+        enable_combination: bool = True,
     ) -> None:
         self._strategies = strategies or []
         self._paper = PaperTradingEngine(initial_capital=capital, risk_config=risk_config)
         self._fundamental = FundamentalFilter() if enable_fundamentals else None
         self._dual_tf = DualTimeframeFilter() if enable_dual_tf else None
         self._ml = EnsembleML() if enable_ml else None
+        self._combination = CombinationEngine() if enable_combination else None
         self._regime_classifier = RegimeClassifier()
         self._signals_generated = 0
         self._signals_approved = 0
         self._signals_filled = 0
+        # Rolling Sharpe ratios per signal family (updated externally)
+        self._sharpe_ratios: dict[str, float] = {}
+        # Alpha decay health multipliers per family (updated externally)
+        self._health_multipliers: dict[str, float] = {}
 
     def register_strategy(self, strategy: Strategy) -> None:
         """Register a strategy for evaluation."""
         self._strategies.append(strategy)
         logger.info("strategy_registered", name=strategy.name)
+
+    def update_sharpe_ratios(self, ratios: dict[str, float]) -> None:
+        """Update rolling Sharpe ratios for signal family weighting."""
+        self._sharpe_ratios.update(ratios)
+
+    def update_health_multipliers(self, multipliers: dict[str, float]) -> None:
+        """Update alpha decay health multipliers from the decay monitor."""
+        self._health_multipliers.update(multipliers)
 
     def process_bar(
         self,
@@ -88,17 +102,28 @@ class Orchestrator:
         ml_features: dict[str, float] | None = None,
         daily_volume: float | None = None,
         current_bar: int = 0,
+        signal_family_results: list[SignalResult] | None = None,
     ) -> list[FillResult]:
         """Process one bar through the full pipeline.
 
         Pipeline: Regime → Strategy Evaluate → Fundamental Filter →
-                 Dual TF Filter → ML Enhance → Risk Validate → Execute
+                 [CombinationEngine] → Dual TF Filter → ML Enhance →
+                 Risk Validate → Execute
+
+        Args:
+            signal_family_results: Pre-computed signal family outputs.
+                If provided, these go through the CombinationEngine
+                for composite scoring and health throttling.
         """
         results: list[FillResult] = []
         active_regime = regime_result.primary_regime
 
+        # Step 0: Check circuit breaker with current prices
+        current_prices = {symbol: closes[-1]}
+        self._paper.risk_manager.check_circuit_breaker(current_prices)
+
         # Step 1: Update prices and check exits on existing positions
-        self._paper.update_prices({symbol: closes[-1]})
+        self._paper.update_prices(current_prices)
         self._paper.check_exits(current_bar=current_bar)
 
         # Step 2: Activate regime-matched strategies
@@ -120,10 +145,29 @@ class Orchestrator:
 
         self._signals_generated += len(raw_signals)
 
+        # Step 2.5: Signal Combination Engine (AUDIT FIX — was dead code)
+        composite_conviction = 1.0
+        if self._combination and signal_family_results:
+            composite = self._combination.combine(
+                signals=signal_family_results,
+                sharpe_ratios=self._sharpe_ratios,
+                health_multipliers=self._health_multipliers or None,
+            )
+            composite_conviction = abs(composite.score) if composite.is_valid else 0.0
+
+            # Conviction gating: skip if composite too weak
+            if composite_conviction < 0.3:
+                logger.debug(
+                    "conviction_skip",
+                    symbol=symbol,
+                    conviction=round(composite_conviction, 3),
+                )
+                return results
+
         if not raw_signals:
             return results
 
-        # Step 3: Fundamental filter (FUND-06: must complete before technical signals proceed)
+        # Step 3: Fundamental filter
         filtered = raw_signals
         if self._fundamental and fundamentals:
             filtered = self._fundamental.filter(filtered, fundamentals)
@@ -140,7 +184,11 @@ class Orchestrator:
 
         # Step 6: Submit to paper trading (includes risk validation)
         for sig in filtered:
-            fill = self._paper.submit_signal(sig, daily_volume=daily_volume)
+            fill = self._paper.submit_signal(
+                sig,
+                daily_volume=daily_volume,
+                conviction=composite_conviction,
+            )
             results.append(fill)
             if fill.filled:
                 self._signals_filled += 1
@@ -153,6 +201,7 @@ class Orchestrator:
                 generated=len(raw_signals),
                 filtered=len(filtered),
                 filled=sum(1 for r in results if r.filled),
+                conviction=round(composite_conviction, 3),
             )
 
         return results
