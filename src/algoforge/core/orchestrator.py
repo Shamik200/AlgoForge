@@ -22,7 +22,7 @@ from algoforge.core.constants import MarketRegime, Timeframe
 from algoforge.core.models import Signal
 from algoforge.execution.paper import FillResult, PaperTradingEngine
 from algoforge.fundamental.pipeline import FundamentalPipeline, FundamentalResult
-from algoforge.ml.ensemble import StackingEnsemble
+from algoforge.ml.pipeline import MLPipeline
 from algoforge.risk.manager import RiskConfig
 from algoforge.signals.models import SignalResult
 from algoforge.strategies.base import Strategy
@@ -61,7 +61,7 @@ class Orchestrator:
         self._paper = PaperTradingEngine(initial_capital=capital, market=Market.CRYPTO, risk_config=risk_config)
         self._fundamental = FundamentalPipeline() if enable_fundamentals else None
         self._dual_tf = DualTimeframeFilter() if enable_dual_tf else None
-        self._ml = StackingEnsemble() if enable_ml else None
+        self._ml = MLPipeline(train_size=1000, test_size=200, forward_bars=5) if enable_ml else None
         self._combination = CombinationEngine() if enable_combination else None
         self._regime_classifier = RegimeClassifier()
         self._signals_generated = 0

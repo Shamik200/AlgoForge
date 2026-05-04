@@ -385,18 +385,24 @@ def _build_ml_features(
 
 
 def _try_train_ml(state: SystemState, series: OHLCVSeries, sym: str) -> None:
-    """Auto-train ML ensemble on first symbol with enough data."""
-    closes = series.closes
+    """Auto-train ML ensemble on first symbol with enough data.
+    
+    Hardened for Phase 10:
+    - Requires 5000 bars minimum for statistical significance.
+    - Uses MLPipeline with purged walk-forward CV to prevent leakage.
+    """
+    closes = np.array(series.closes, dtype=np.float64)
     n = len(closes)
 
-    if state._ml_trained or not state.orchestrator._ml or n < 60:
+    # Require minimum 5000 bars (approx 3.5 days of 1m data)
+    MIN_TRAIN_BARS = 5000
+    if state._ml_trained or not state.orchestrator._ml or n < MIN_TRAIN_BARS:
         return
 
     try:
         from algoforge.ml.features import FeatureBuilder
-        X_rows, y_cls, y_ret = [], [], []
-        step = 3
-        for i in range(30, n - step):
+        X_rows = []
+        for i in range(21, n):
             feat = FeatureBuilder.build(
                 signal_scores={},
                 returns_1=(closes[i] / closes[i - 1] - 1) if i > 0 else 0,
@@ -408,19 +414,29 @@ def _try_train_ml(state: SystemState, series: OHLCVSeries, sym: str) -> None:
                 momentum=closes[i] - float(np.mean(closes[max(0, i - 21):i])),
             )
             X_rows.append(feat)
-            fwd = (closes[i + step] / closes[i] - 1)
-            y_cls.append(1 if fwd > 0.002 else (-1 if fwd < -0.002 else 0))
-            y_ret.append(fwd)
-        if len(X_rows) >= 20:
-            import numpy as _np
-            state.orchestrator._ml.fit(
-                _np.array(X_rows), _np.array(y_cls), _np.array(y_ret)
-            )
-            state._ml_trained = True
-            log_msg(state, f"ML Ensemble trained on {len(X_rows)} historical bars from {sym}.")
+            
+        features = np.array(X_rows)
+        # Pad initial prices to match features length
+        aligned_closes = closes[21:]
+        aligned_highs = np.array(series.highs)[21:]
+        aligned_lows = np.array(series.lows)[21:]
+
+        log_msg(state, f"Starting ML pipeline training on {len(features)} historical bars from {sym} (Purged Walk-Forward CV)...")
+        
+        result = state.orchestrator._ml.train(
+            features=features,
+            closes=aligned_closes,
+            highs=aligned_highs,
+            lows=aligned_lows,
+        )
+        
+        state._ml_trained = True
+        log_msg(state, f"ML Pipeline trained successfully. Folds: {result.n_folds}, Avg Accuracy: {result.avg_accuracy:.3f}")
     except Exception as ml_e:
         logger.warning(f"ML training failed: {ml_e}")
-        state._ml_trained = True  # Don't retry on error
+        import traceback
+        logger.debug(traceback.format_exc())
+        state._ml_trained = True  # Don't retry continuously on error
 
 
 def _log_decision(
