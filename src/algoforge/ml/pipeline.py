@@ -111,6 +111,21 @@ class MLPipeline:
                            self.train_size + self.test_size + self.forward_bars, len(X_valid))
             return MLPipelineResult(0.0, [], {}, 0)
 
+        # Phase 11: Factor Quality Measurement (Qlib-inspired)
+        try:
+            from algoforge.ml.factor_analyzer import FactorAnalyzer
+            analyzer = FactorAnalyzer()
+            if FeatureBuilder.FEATURE_NAMES:
+                metrics = analyzer.evaluate_factors(X_valid, FeatureBuilder.FEATURE_NAMES, y_return)
+                decaying = [m.name for m in metrics.values() if m.is_decaying]
+                if decaying:
+                    logger.warning(f"Alpha Decay Detected: {len(decaying)} factors decaying (e.g. {decaying[:3]})")
+                
+                # We could filter out redundant features here using analyzer.filter_redundant_features
+                # but we'll keep all for the ensemble right now and let XGBoost handle them
+        except Exception as e:
+            logger.warning(f"Factor analysis failed: {e}")
+
         # Purged Walk-Forward Cross-Validation
         fold_accuracies = []
         folds = list(purged_walk_forward_split(

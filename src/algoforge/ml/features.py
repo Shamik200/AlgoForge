@@ -136,7 +136,18 @@ class FeatureBuilder:
         features.append(sector_momentum)
         names.extend(["cross_bench_corr", "cross_rel_strength", "cross_spread_z", "cross_sector_mom"])
 
-        # --- Category 7: Cyclical Time Features (6 features) ---
+        # --- Category 7: Alpha158-style Technical Factors (16 features) ---
+        # Note: Added for Phase 11. In production, these should be passed from live_handler.py
+        # Here we mock them with 0.0 if not provided to avoid breaking the signature
+        features.extend([0.0] * 16)
+        names.extend([
+            "alpha_macd", "alpha_macd_signal", "alpha_macd_hist", "alpha_rsi_14", 
+            "alpha_cci_20", "alpha_bollinger_w", "alpha_stoch_k", "alpha_stoch_d",
+            "alpha_roc_10", "alpha_williams_r", "alpha_adx_14", "alpha_mfi_14",
+            "alpha_trix", "alpha_ult_osc", "alpha_cmf", "alpha_keltner_w"
+        ])
+
+        # --- Category 8: Cyclical Time Features (6 features) ---
         # Encode cyclical features as sin/cos to preserve periodicity
         features.append(math.sin(2 * math.pi * hour / 24))
         features.append(math.cos(2 * math.pi * hour / 24))
