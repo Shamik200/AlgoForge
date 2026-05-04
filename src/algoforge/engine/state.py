@@ -160,6 +160,13 @@ class SystemState:
             if engine:
                 engine.load_state(state)
             
+            # Phase 10: Restore trained ML model
+            if self._ml_trained and self.orchestrator._ml:
+                loaded = self.orchestrator._ml.load("data/ml_model.joblib")
+                if not loaded:
+                    self._ml_trained = False
+                    logger.warning("ML model was marked trained but failed to load. Will retrain.")
+
             logger.info("system_state_restored")
         except Exception as e:
             logger.warning(f"State restore failed: {e}")

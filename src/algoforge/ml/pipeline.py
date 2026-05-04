@@ -1,7 +1,9 @@
 """ML Pipeline orchestrator."""
 
 import logging
+import joblib
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -48,6 +50,25 @@ class MLPipeline:
         self.train_size = train_size
         self.test_size = test_size
         self.ensemble = StackingEnsemble()
+
+    def save(self, file_path: str | Path) -> None:
+        """Save the trained ensemble to disk."""
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(self.ensemble, path)
+        logger.info(f"ML Pipeline model saved to {path}")
+
+    def load(self, file_path: str | Path) -> bool:
+        """Load a trained ensemble from disk."""
+        path = Path(file_path)
+        if path.exists():
+            try:
+                self.ensemble = joblib.load(path)
+                logger.info(f"ML Pipeline model loaded from {path}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to load ML model from {path}: {e}")
+        return False
 
     def train(
         self,

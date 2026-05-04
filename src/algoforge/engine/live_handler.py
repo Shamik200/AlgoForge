@@ -438,6 +438,8 @@ def _try_train_ml(state: SystemState, series: OHLCVSeries, sym: str) -> None:
         )
         
         state._ml_trained = True
+        # Phase 10: Model persistence
+        state.orchestrator._ml.save("data/ml_model.joblib")
         log_msg(state, f"ML Pipeline trained successfully. Folds: {result.n_folds}, Avg Accuracy: {result.avg_accuracy:.3f}")
     except Exception as ml_e:
         logger.warning(f"ML training failed: {ml_e}")

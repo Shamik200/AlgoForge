@@ -70,6 +70,10 @@ class RiskConfig(BaseModel):
     market_circuit_breaker_pct: float = Field(default=0.05, ge=0.02, le=0.20,
         description="Halt if market drops >5% from open (0.05 = 5%)")
 
+    # Phase 10: FinRL Turbulence Index
+    max_turbulence: float = Field(default=50.0, ge=10.0, le=200.0,
+        description="Halt if market turbulence exceeds threshold")
+
     # Execution
     slippage_buffer_pct: float = Field(default=0.0001, ge=0.0, le=0.01,
         description="0.01% slippage buffer on SL/TP")
@@ -128,6 +132,7 @@ class RiskManager:
         self._trade_results: list[float] = []  # For Kelly sizing
         self._correlation_matrix = CorrelationMatrix()
         self._sector_map: dict[str, str] = sector_map or {}  # symbol -> sector
+        self._current_turbulence: float = 0.0
 
     @property
     def capital(self) -> float:
@@ -146,6 +151,7 @@ class RiskManager:
             "approvals": self._approvals,
             "kill_switch": self._kill_switch_active,
             "circuit_breaker": self._circuit_breaker_active,
+            "turbulence": self._current_turbulence,
             "sizing_method": self._config.sizing_method,
         }
 
@@ -155,6 +161,30 @@ class RiskManager:
         if self._peak_equity == 0:
             return 0.0
         return (self._peak_equity - self._capital) / self._peak_equity
+
+    def update_turbulence(self, current_returns: dict[str, float], historical_cov_inv: np.ndarray | None = None) -> None:
+        """Update FinRL-inspired Turbulence Index.
+        
+        Calculates Mahalanobis distance of current returns.
+        """
+        import numpy as np
+        
+        if not current_returns:
+            return
+            
+        ret_array = np.array(list(current_returns.values()))
+        if historical_cov_inv is None:
+            # Simplified proxy if full covariance matrix not available:
+            # Use squared returns scaled by 100 as a basic turbulence proxy
+            self._current_turbulence = float(np.sum(ret_array**2) * 10000)
+        else:
+            try:
+                # Proper Mahalanobis distance
+                diff = ret_array - np.mean(ret_array)
+                turb = diff.T @ historical_cov_inv @ diff
+                self._current_turbulence = float(turb)
+            except Exception:
+                self._current_turbulence = float(np.sum(ret_array**2) * 10000)
 
     def validate(
         self,
@@ -186,6 +216,14 @@ class RiskManager:
         # RISK-14: Kill switch check (absolute veto)
         if self._kill_switch_active:
             reasons.append("KILL_SWITCH: Trading halted — max drawdown exceeded")
+            return self._reject(reasons)
+
+        # Phase 10: FinRL Turbulence Kill Switch
+        if self._current_turbulence > self._config.max_turbulence:
+            reasons.append(
+                f"TURBULENCE_HALT: Market turbulence ({self._current_turbulence:.1f}) "
+                f"exceeds limit ({self._config.max_turbulence:.1f})"
+            )
             return self._reject(reasons)
 
         # Check drawdown kill switch
