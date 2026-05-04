@@ -60,9 +60,12 @@ class Orchestrator:
         from algoforge.core.constants import Market
         from algoforge.execution.paper import PaperTradingEngine
         from algoforge.connectors.factory import ConnectorFactory
+        from algoforge.execution.reconciliation import ReconciliationEngine
         
         paper_engine = PaperTradingEngine(initial_capital=capital, market=Market.CRYPTO, risk_config=risk_config)
         self.connector = ConnectorFactory.create(mode="paper", paper_engine=paper_engine)
+        
+        self._reconciliation = ReconciliationEngine()
         
         self._fundamental = FundamentalPipeline() if enable_fundamentals else None
         self._dual_tf = DualTimeframeFilter() if enable_dual_tf else None
