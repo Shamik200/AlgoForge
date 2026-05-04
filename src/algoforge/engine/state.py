@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from algoforge.core.constants import Timeframe
 from algoforge.core.models import OHLCV
 from algoforge.core.orchestrator import Orchestrator
+from algoforge.engine.persistence import PersistenceStore
 from algoforge.risk.manager import RiskConfig
 from algoforge.technical.engine import IndicatorEngine
 from algoforge.technical.structural.engine import StructuralEngine
@@ -118,6 +119,69 @@ class SystemState:
 
         # Strategy signal counters
         self.strategy_signals: dict[str, int] = {}
+
+        # Phase 4: Data Persistence
+        self.persistence = PersistenceStore()
+        self._checkpoint_counter = 0
+
+    def save_checkpoint(self) -> None:
+        """Save periodic state checkpoint (call every 60 bars ~ 1 hour at 1m)."""
+        self._checkpoint_counter += 1
+        if self._checkpoint_counter % 60 != 0:
+            return
+
+        try:
+            engine = self.orchestrator._paper
+            snap = engine.snapshot()
+            positions = [p.model_dump(mode='json') for p in engine.open_positions]
+            self.persistence.save_full_state(
+                equity=snap.equity,
+                cash=snap.cash,
+                positions=positions,
+                selected_assets=self.selected_assets,
+                ml_trained=self._ml_trained,
+            )
+        except Exception as e:
+            logger.warning(f"State checkpoint failed: {e}")
+
+    def persist_trade(self, trade) -> None:
+        """Persist a completed trade to SQLite."""
+        try:
+            self.persistence.save_trade({
+                "id": trade.id,
+                "symbol": trade.symbol,
+                "direction": trade.direction.value,
+                "strategy": trade.strategy,
+                "entry_price": trade.entry_price,
+                "exit_price": trade.exit_price,
+                "quantity": trade.quantity,
+                "entry_time": trade.entry_time.isoformat(),
+                "exit_time": trade.exit_time.isoformat(),
+                "pnl": trade.pnl,
+                "commission": trade.commission,
+                "slippage": trade.slippage,
+                "bars_held": trade.bars_held,
+            })
+        except Exception as e:
+            logger.warning(f"Trade persistence failed: {e}")
+
+    def persist_klines(self, symbol: str) -> None:
+        """Persist kline buffer for a symbol to SQLite cache."""
+        if symbol not in self.kline_buffers:
+            return
+        try:
+            candles = [
+                {
+                    "timestamp": c.timestamp.isoformat(),
+                    "open": c.open, "high": c.high,
+                    "low": c.low, "close": c.close,
+                    "volume": c.volume,
+                }
+                for c in self.kline_buffers[symbol][-300:]
+            ]
+            self.persistence.save_klines(symbol, "1m", candles)
+        except Exception as e:
+            logger.warning(f"Kline persistence failed for {symbol}: {e}")
 
 
 def log_msg(state: SystemState, msg: str) -> None:

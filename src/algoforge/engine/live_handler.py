@@ -60,6 +60,8 @@ async def handle_live_tick(
         closed_trades = engine.check_exits()
         for trade in closed_trades:
             log_msg(state, f"POSITION CLOSED: {trade.symbol} at ${trade.exit_price:.2f} | PnL: ${trade.pnl:.2f}")
+            # Phase 4: Persist closed trade to SQLite
+            state.persist_trade(trade)
             await broadcast_fn()
 
     # 2. KLINE CLOSE — full pipeline
@@ -169,6 +171,11 @@ async def handle_live_tick(
             logger.debug(traceback.format_exc())
 
         await broadcast_fn()
+
+        # Phase 4: Periodic state checkpoint + kline cache persistence
+        state.save_checkpoint()
+        if state._checkpoint_counter % 30 == 0:  # Every 30 bars persist klines
+            state.persist_klines(sym)
 
 
 def _compute_signal_families(

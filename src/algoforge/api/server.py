@@ -98,6 +98,25 @@ async def update_config(config: ConfigRequest):
     return {"status": "success"}
 
 
+# Phase 4: Data Persistence endpoints
+@app.get("/api/trades")
+async def get_trade_history():
+    """Query persisted trade history from SQLite."""
+    trades = state.persistence.get_trade_history(limit=200)
+    strategy_stats = state.persistence.get_strategy_stats()
+    return {
+        "trades": trades,
+        "total_persisted": state.persistence.get_trade_count(),
+        "strategy_stats": strategy_stats,
+    }
+
+
+@app.get("/api/trades/stats")
+async def get_strategy_stats():
+    """Aggregated per-strategy performance stats."""
+    return state.persistence.get_strategy_stats()
+
+
 @app.post("/api/system/start")
 async def start_system():
     if state.is_running:

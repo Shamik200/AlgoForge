@@ -19,6 +19,9 @@ from pydantic import BaseModel, Field
 
 from algoforge.core.constants import Direction, Market, Timeframe
 from algoforge.core.models import Position, Signal
+from algoforge.oms.manager import OrderManager
+from algoforge.oms.models import Order, OrderType
+from algoforge.oms.store import OrderStore
 from algoforge.risk.manager import RiskConfig, RiskManager
 
 logger = structlog.get_logger(__name__)
@@ -108,6 +111,7 @@ class PaperTradingEngine:
         latency_max_ms: float = 200.0,
         latency_enabled: bool = True,
         risk_config: RiskConfig | None = None,
+        oms_db_path: str = "data/oms_orders.db",
     ) -> None:
         self._initial_capital = initial_capital
         self._cash = initial_capital
@@ -124,6 +128,18 @@ class PaperTradingEngine:
         self._current_bar = 0
         self._prices: dict[str, float] = {}
         self._rng = random.Random(42)
+
+        # OMS Integration (Phase 3)
+        try:
+            from pathlib import Path
+            Path(oms_db_path).parent.mkdir(parents=True, exist_ok=True)
+            self._oms_store = OrderStore(db_path=oms_db_path)
+            self._oms = OrderManager(store=self._oms_store)
+            logger.info("oms_initialized", db_path=oms_db_path)
+        except Exception as e:
+            logger.warning(f"OMS initialization failed, running without audit trail: {e}")
+            self._oms = None
+            self._oms_store = None
 
     @property
     def equity(self) -> float:
@@ -168,11 +184,52 @@ class PaperTradingEngine:
             conviction=conviction,
         )
 
+        # Generate correlation ID for OMS tracking
+        correlation_id = f"{signal.symbol}-{signal.strategy}-{self._current_bar}-{uuid.uuid4().hex[:6]}"
+
         if not risk_result.approved:
+            # Track rejected order in OMS
+            if self._oms:
+                oms_order = Order(
+                    correlation_id=correlation_id,
+                    symbol=signal.symbol,
+                    direction=signal.direction.value,
+                    order_type=OrderType.MARKET,
+                    price=signal.entry_price,
+                    quantity=risk_result.position_size or 0.0001,
+                )
+                submitted = self._oms.submit_order(oms_order)
+                if submitted:
+                    from algoforge.oms.state_machine import transition
+                    from algoforge.oms.models import OrderStatus
+                    try:
+                        rejected = transition(submitted, OrderStatus.REJECTED)
+                        self._oms.store.update_order(rejected)
+                    except Exception:
+                        pass
+
             return FillResult(
                 filled=False,
                 rejection_reason="; ".join(risk_result.rejection_reasons),
             )
+
+        # Submit order to OMS before execution
+        if self._oms:
+            oms_order = Order(
+                correlation_id=correlation_id,
+                symbol=signal.symbol,
+                direction=signal.direction.value,
+                order_type=OrderType.MARKET,
+                price=signal.entry_price,
+                quantity=risk_result.position_size,
+            )
+            submitted = self._oms.submit_order(oms_order)
+            if submitted is None:
+                # Idempotency guard — duplicate order
+                return FillResult(
+                    filled=False,
+                    rejection_reason="OMS: Duplicate order (idempotency guard)",
+                )
 
         # Apply slippage (PAPR-01)
         slippage = signal.entry_price * self._slippage_pct
@@ -203,6 +260,9 @@ class PaperTradingEngine:
         # Check cash available
         position_cost = fill_price * risk_result.position_size + commission
         if position_cost > self._cash:
+            # Cancel OMS order on insufficient funds
+            if self._oms:
+                self._oms.cancel_order(correlation_id)
             return FillResult(
                 filled=False,
                 rejection_reason=f"Insufficient cash: {self._cash:.2f} < {position_cost:.2f}",
@@ -228,6 +288,10 @@ class PaperTradingEngine:
         self._positions[position_id] = position
         self._cash -= position_cost
 
+        # Mark OMS order as filled
+        if self._oms:
+            self._oms.fill_order(correlation_id)
+
         logger.info(
             "paper_fill",
             position_id=position_id,
@@ -237,6 +301,7 @@ class PaperTradingEngine:
             quantity=risk_result.position_size,
             commission=round(commission, 2),
             slippage=round(slippage, 4),
+            oms_id=correlation_id if self._oms else "n/a",
         )
 
         return FillResult(
