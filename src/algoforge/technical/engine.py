@@ -33,6 +33,7 @@ from algoforge.technical.adx import ADX
 from algoforge.technical.atr import ATR
 from algoforge.technical.bollinger import BollingerBands
 from algoforge.technical.donchian import DonchianChannels
+from algoforge.technical.ema import EMA
 from algoforge.technical.indicator_base import Indicator, IndicatorResult
 from algoforge.technical.kama import KAMA
 from algoforge.technical.keltner import KeltnerChannels
@@ -155,6 +156,7 @@ class IndicatorEngine:
         # Tier 1: Core orthogonal indicators (ALWAYS computed)
         self._core_indicators: list[Indicator] = [
             KAMA(er_period=kama_er_period, fast_sc=kama_fast_sc, slow_sc=kama_slow_sc),
+            EMA(periods=[5, 9, 21, 50, 100, 200]),
             ADX(period=adx_period),
             ROC(period=roc_period),
             ATR(period=atr_period),

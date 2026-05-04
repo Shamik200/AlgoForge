@@ -94,7 +94,7 @@ class PaperTradingEngine:
     FEE_STRUCTURES: dict[Market, dict[str, float]] = {
         Market.STOCKS_US: {"commission_per_share": 0.005, "min_commission": 1.0, "tax_rate": 0.0},
         Market.STOCKS_INDIA: {"commission_pct": 0.0003, "stt_pct": 0.001, "gst_pct": 0.18, "min_commission": 20.0},
-        Market.CRYPTO: {"commission_pct": 0.001, "min_commission": 0.0, "tax_rate": 0.0},
+        Market.CRYPTO: {"commission_pct": 0.0004, "min_commission": 0.0, "tax_rate": 0.0},
         Market.FOREX: {"spread_pips": 1.5, "commission_per_lot": 3.5, "min_commission": 0.0},
     }
 
@@ -102,7 +102,7 @@ class PaperTradingEngine:
         self,
         initial_capital: float = 100_000.0,
         market: Market = Market.STOCKS_US,
-        slippage_pct: float = 0.0005,
+        slippage_pct: float = 0.0000,
         latency_ms: float = 100.0,
         latency_min_ms: float = 50.0,
         latency_max_ms: float = 200.0,
@@ -127,9 +127,10 @@ class PaperTradingEngine:
 
     @property
     def equity(self) -> float:
-        """Total equity = cash + sum of open position values."""
-        position_value = sum(p.market_value for p in self._positions.values())
-        return self._cash + position_value
+        """Total equity = cash + locked margin + unrealized pnl."""
+        margin_locked = sum(p.entry_price * p.quantity for p in self._positions.values())
+        unrealized_pnl = sum(p.unrealized_pnl for p in self._positions.values())
+        return self._cash + margin_locked + unrealized_pnl
 
     @property
     def open_positions(self) -> list[Position]:
@@ -312,7 +313,7 @@ class PaperTradingEngine:
                 )
 
                 self._trade_history.append(trade)
-                self._cash += exit_price * pos.quantity - commission
+                self._cash += (pos.entry_price * pos.quantity) + pnl
                 self._risk_manager.record_trade_result(pnl)
                 to_close.append(pid)
                 closed.append(trade)

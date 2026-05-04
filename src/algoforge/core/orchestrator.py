@@ -57,7 +57,8 @@ class Orchestrator:
         enable_combination: bool = True,
     ) -> None:
         self._strategies = strategies or []
-        self._paper = PaperTradingEngine(initial_capital=capital, risk_config=risk_config)
+        from algoforge.core.constants import Market
+        self._paper = PaperTradingEngine(initial_capital=capital, market=Market.CRYPTO, risk_config=risk_config)
         self._fundamental = FundamentalPipeline() if enable_fundamentals else None
         self._dual_tf = DualTimeframeFilter() if enable_dual_tf else None
         self._ml = StackingEnsemble() if enable_ml else None

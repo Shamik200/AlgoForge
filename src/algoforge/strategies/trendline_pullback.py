@@ -44,11 +44,11 @@ class TrendlinePullback(Strategy):
 
     def __init__(
         self,
-        atr_touch_multiplier: float = 1.0,
+        atr_touch_multiplier: float = 2.0,
         atr_sl_multiplier: float = 1.5,
-        min_adx: float = 20.0,
-        min_rr_ratio: float = 2.0,
-        momentum_bars: int = 1,
+        min_adx: float = 15.0,
+        min_rr_ratio: float = 1.5,
+        momentum_bars: int = 2,
     ) -> None:
         self._atr_touch = atr_touch_multiplier
         self._atr_sl = atr_sl_multiplier
@@ -87,11 +87,22 @@ class TrendlinePullback(Strategy):
         if len(closes) < self.min_bars:
             return signals
 
-        # PRIM-12: Skip if trend is unclear
+        # PRIM-12: Use structural trend if clear; else infer from EMA direction
         trend = structure.trend_direction
         if trend == TrendDirection.UNCLEAR:
-            logger.debug("trendline_pullback_skip", symbol=symbol, reason="trend_unclear")
-            return signals
+            # Fall back to EMA direction to allow trading in regime=trending situations
+            ema_result_raw = indicators.get("ema")
+            if ema_result_raw:
+                ema9  = self._latest_valid(ema_result_raw.values.get("ema_9", []))
+                ema21 = self._latest_valid(ema_result_raw.values.get("ema_21", []))
+                if ema9 and ema21:
+                    if ema9 > ema21:
+                        trend = TrendDirection.UP
+                    elif ema9 < ema21:
+                        trend = TrendDirection.DOWN
+            if trend == TrendDirection.UNCLEAR:
+                logger.debug("trendline_pullback_skip", symbol=symbol, reason="trend_unclear")
+                return signals
 
         # Get indicator values
         atr_result = indicators.get("atr")
@@ -114,7 +125,7 @@ class TrendlinePullback(Strategy):
         if current_atr is None or current_rsi is None or current_adx is None:
             return signals
 
-        # PRIM-06: ADX > threshold
+        # PRIM-06: ADX > threshold (relaxed to 15)
         if current_adx < self._min_adx:
             logger.debug("trendline_pullback_skip", symbol=symbol, reason=f"adx_low ({current_adx:.1f})")
             return signals
@@ -148,8 +159,8 @@ class TrendlinePullback(Strategy):
                 # Uptrend: pullback to LOWER trendline (support)
                 # PRIM-02: Wait for pullback to lower trendline
 
-                # PRIM-05: RSI turning from oversold
-                if current_rsi > 45:  # Not pulling back enough
+                # PRIM-05: RSI not overbought (widened to 60)
+                if current_rsi > 60:  # Price not pulling back enough
                     continue
 
                 # PRIM-07: Bullish candlestick confirmation
@@ -202,8 +213,8 @@ class TrendlinePullback(Strategy):
                 # Downtrend: rally to UPPER trendline (resistance)
                 # PRIM-03
 
-                # PRIM-05: RSI turning from overbought
-                if current_rsi < 55:
+                # PRIM-05: RSI not oversold (widened to 40)
+                if current_rsi < 40:
                     continue
 
                 # PRIM-07: Bearish candlestick confirmation
@@ -277,10 +288,11 @@ class TrendlinePullback(Strategy):
         if ema_5 is None or ema_9 is None or ema_21 is None:
             return False
 
+        # Relaxed: just need short EMA above/below long EMA (EMA9 vs EMA21 is sufficient)
         if trend == TrendDirection.UP:
-            return ema_5 > ema_9 > ema_21
+            return ema_9 > ema_21  # Don't require full stacking ema_5 > ema_9 > ema_21
         elif trend == TrendDirection.DOWN:
-            return ema_5 < ema_9 < ema_21
+            return ema_9 < ema_21
         return False
 
     def _find_target(

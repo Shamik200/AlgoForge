@@ -24,36 +24,57 @@ logger = structlog.get_logger(__name__)
 
 
 class RiskConfig(BaseModel):
-    """Risk management configuration — all limits configurable."""
+    """Risk management configuration — all limits configurable.
+
+    IMPORTANT: All percentage fields use FRACTIONAL notation:
+        0.02 = 2%, 0.05 = 5%, 0.15 = 15%, etc.
+    Never pass whole-number percentages (e.g., 15.0 would mean 1500%).
+    """
 
     # Per-trade limits
-    max_risk_per_trade_pct: float = Field(default=0.02, description="Max 1-2% of capital per trade")
-    max_position_size_pct: float = Field(default=0.10, description="Max 5-10% of capital per position")
-    min_risk_reward: float = Field(default=2.0, description="Minimum R:R ratio")
+    max_risk_per_trade_pct: float = Field(default=0.02, ge=0.001, le=0.10,
+        description="Max 1-2% of capital risked per trade (0.02 = 2%)")
+    max_position_size_pct: float = Field(default=0.10, ge=0.01, le=0.50,
+        description="Max 5-10% of capital per position (0.10 = 10%)")
+    min_risk_reward: float = Field(default=1.5, ge=0.5, le=10.0,
+        description="Minimum R:R ratio")
 
     # Position sizing
     sizing_method: str = Field(default="kelly", description="'fixed' or 'kelly'")
-    kelly_fraction: float = Field(default=0.25, description="Fractional Kelly (0.25 = quarter-Kelly for safety)")
+    kelly_fraction: float = Field(default=0.25, ge=0.05, le=1.0,
+        description="Fractional Kelly (0.25 = quarter-Kelly for safety)")
 
     # Consecutive loss limits
-    max_consecutive_losses: int = Field(default=5, description="Max consecutive losses before cooldown")
-    cooldown_bars: int = Field(default=60, description="Cooldown period in bars after max losses")
+    max_consecutive_losses: int = Field(default=5, ge=2, le=20,
+        description="Max consecutive losses before cooldown")
+    cooldown_bars: int = Field(default=60, ge=5, le=1440,
+        description="Cooldown period in bars after max losses")
 
     # Portfolio limits
-    max_open_positions: int = Field(default=5, description="Max 5-10 open positions")
-    max_daily_loss_pct: float = Field(default=0.05, description="Max 3-5% daily loss")
-    max_weekly_loss_pct: float = Field(default=0.10, description="Max 7-10% weekly loss")
-    max_drawdown_pct: float = Field(default=0.20, description="Kill switch: 15-20% from peak")
-    max_sector_exposure_pct: float = Field(default=0.25, description="Max 25% per sector")
-    max_directional_exposure_pct: float = Field(default=0.60, description="Max 60% net direction")
-    max_correlation: float = Field(default=0.70, description="Max correlation between positions")
+    max_open_positions: int = Field(default=5, ge=1, le=50,
+        description="Max 5-10 open positions")
+    max_daily_loss_pct: float = Field(default=0.05, ge=0.01, le=0.20,
+        description="Max 3-5% daily loss before halt (0.05 = 5%)")
+    max_weekly_loss_pct: float = Field(default=0.10, ge=0.03, le=0.30,
+        description="Max 7-10% weekly loss before halt (0.10 = 10%)")
+    max_drawdown_pct: float = Field(default=0.20, ge=0.05, le=0.50,
+        description="Kill switch: 15-20% drawdown from peak (0.20 = 20%)")
+    max_sector_exposure_pct: float = Field(default=0.25, ge=0.10, le=0.50,
+        description="Max 25% per sector (0.25 = 25%)")
+    max_directional_exposure_pct: float = Field(default=0.60, ge=0.30, le=1.0,
+        description="Max 60% net directional exposure (0.60 = 60%)")
+    max_correlation: float = Field(default=0.70, ge=0.30, le=1.0,
+        description="Max correlation between positions")
 
     # Circuit breaker (RISK-19)
-    market_circuit_breaker_pct: float = Field(default=0.05, description="Halt if market drops >5% from open")
+    market_circuit_breaker_pct: float = Field(default=0.05, ge=0.02, le=0.20,
+        description="Halt if market drops >5% from open (0.05 = 5%)")
 
     # Execution
-    slippage_buffer_pct: float = Field(default=0.001, description="0.1% slippage buffer on SL/TP")
-    min_volume_multiplier: float = Field(default=3.0, description="Reject if volume < 3x position size")
+    slippage_buffer_pct: float = Field(default=0.0001, ge=0.0, le=0.01,
+        description="0.01% slippage buffer on SL/TP")
+    min_volume_multiplier: float = Field(default=3.0, ge=1.0, le=10.0,
+        description="Reject if volume < 3x position size")
 
 
 class RiskCheckResult(BaseModel):
@@ -103,6 +124,7 @@ class RiskManager:
         self._kill_switch_active = False
         self._circuit_breaker_active = False
         self._session_open_prices: dict[str, float] = {}  # RISK-19
+        self._rolling_highs: dict[str, float] = {}  # Crypto: rolling high for circuit breaker
         self._trade_results: list[float] = []  # For Kelly sizing
         self._correlation_matrix = CorrelationMatrix()
         self._sector_map: dict[str, str] = sector_map or {}  # symbol -> sector
@@ -451,28 +473,36 @@ class RiskManager:
         self._circuit_breaker_active = False  # Reset for new session
 
     def check_circuit_breaker(self, current_prices: dict[str, float]) -> bool:
-        """Check if any tracked symbol has dropped >5% from session open (RISK-19).
+        """Check if any tracked symbol has dropped >5% from reference price (RISK-19).
+
+        Works for both session-based markets (stocks) and 24/7 markets (crypto):
+        - If session_open_prices set: uses session open as reference
+        - Otherwise: uses rolling high as reference (crypto-compatible)
 
         Returns True if circuit breaker triggers.
         """
-        if not self._session_open_prices:
-            return False
-
         threshold = self._config.market_circuit_breaker_pct
 
         for symbol, current in current_prices.items():
-            open_price = self._session_open_prices.get(symbol)
-            if open_price and open_price > 0:
-                drop = (open_price - current) / open_price
+            # Update rolling high for crypto mode
+            prev_high = self._rolling_highs.get(symbol, 0.0)
+            if current > prev_high:
+                self._rolling_highs[symbol] = current
+
+            # Use session open if available (stocks), else rolling high (crypto)
+            ref_price = self._session_open_prices.get(symbol) or self._rolling_highs.get(symbol)
+            if ref_price and ref_price > 0:
+                drop = (ref_price - current) / ref_price
                 if drop >= threshold:
                     self._circuit_breaker_active = True
                     logger.error(
                         "circuit_breaker_triggered",
                         symbol=symbol,
-                        open_price=open_price,
+                        reference_price=ref_price,
                         current_price=current,
                         drop_pct=round(drop * 100, 2),
                         threshold_pct=round(threshold * 100, 1),
+                        mode="session" if symbol in self._session_open_prices else "rolling_high",
                     )
                     return True
 

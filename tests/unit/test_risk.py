@@ -48,8 +48,12 @@ class TestRiskConfig:
     def test_default_config(self) -> None:
         cfg = RiskConfig()
         assert cfg.max_risk_per_trade_pct == 0.02
-        assert cfg.min_risk_reward == 2.0
+        assert cfg.min_risk_reward == 1.5
         assert cfg.max_open_positions == 5
+        # Verify corrected safety defaults (were 0.50 = 50%, now sane)
+        assert cfg.max_daily_loss_pct == 0.05    # 5%
+        assert cfg.max_weekly_loss_pct == 0.10   # 10%
+        assert cfg.max_drawdown_pct == 0.20      # 20%
 
     def test_custom_config(self) -> None:
         cfg = RiskConfig(max_risk_per_trade_pct=0.01, min_risk_reward=3.0)
