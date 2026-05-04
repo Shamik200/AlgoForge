@@ -111,7 +111,7 @@ class SystemState:
         # Live Data Buffers
         self.live_books: dict[str, dict] = {}
         self.kline_buffers: dict[str, list[OHLCV]] = {}
-        self.adapter: Any = None
+        self.connector: Any = None
 
         # Live regime tracking per asset
         self.asset_regimes: dict[str, str] = {}
@@ -143,6 +143,26 @@ class SystemState:
             )
         except Exception as e:
             logger.warning(f"State checkpoint failed: {e}")
+
+    def restore_checkpoint(self) -> None:
+        """Restore state from the last checkpoint."""
+        try:
+            state = self.persistence.load_full_state()
+            if not state:
+                return
+
+            if "selected_assets" in state:
+                self.selected_assets = state["selected_assets"]
+            if "ml_trained" in state:
+                self._ml_trained = state["ml_trained"]
+
+            engine = self.orchestrator._paper
+            if engine:
+                engine.load_state(state)
+            
+            logger.info("system_state_restored")
+        except Exception as e:
+            logger.warning(f"State restore failed: {e}")
 
     def persist_trade(self, trade) -> None:
         """Persist a completed trade to SQLite."""

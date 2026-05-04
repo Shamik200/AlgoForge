@@ -484,3 +484,34 @@ class PaperTradingEngine:
         self._current_bar = 0
         self._prices.clear()
         self._rng = random.Random(42)
+
+    def load_state(self, state: dict) -> None:
+        """Load engine state from a checkpoint dictionary.
+        
+        Args:
+            state: Dictionary containing 'cash', 'equity', 'positions', etc.
+        """
+        if "cash" in state:
+            self._cash = state["cash"]
+            
+        if "equity" in state:
+            # We don't directly set equity as it's a property, but we can update peak_equity
+            self._peak_equity = max(self._initial_capital, state["equity"])
+            
+        if "positions" in state:
+            self._positions.clear()
+            for pos_dict in state["positions"]:
+                # Convert string datetime back to datetime object if needed
+                if isinstance(pos_dict.get("opened_at"), str):
+                    try:
+                        pos_dict["opened_at"] = datetime.fromisoformat(pos_dict["opened_at"])
+                    except ValueError:
+                        pass
+                pos = Position(**pos_dict)
+                self._positions[pos.id] = pos
+                
+        logger.info(
+            "paper_engine_state_loaded",
+            cash=self._cash,
+            open_positions=len(self._positions),
+        )

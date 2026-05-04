@@ -42,6 +42,7 @@ app.add_middleware(
 # GLOBAL STATE
 # ---------------------------------------------------------
 state = SystemState()
+state.restore_checkpoint()  # Phase 9: Restore trade persistence on startup
 
 
 # ---------------------------------------------------------
@@ -126,11 +127,8 @@ async def start_system():
     state.is_running = True
     asyncio.create_task(trading_engine_loop(state, broadcast_telemetry))
     # Reset cooldown so prior session losses don't block fresh start
-    rm = state.orchestrator._paper.risk_manager
-    rm._consecutive_losses = 0
-    rm._cooldown_until = None
-    rm._kill_switch_active = False
-    rm._circuit_breaker_active = False
+    if state.connector:
+        state.connector.reset_risk_limits()
     log_msg(state, "SYSTEM STARTED: Live Paper Trading on WebSocket Streams.")
     await broadcast_telemetry()
     return {"status": "started"}
@@ -140,8 +138,8 @@ async def start_system():
 async def stop_system():
     state.is_running = False
     # Fire-and-forget stop — don't await WS close (causes pause delay)
-    if state.adapter:
-        asyncio.create_task(state.adapter.stop())
+    if state.connector:
+        asyncio.create_task(state.connector.stop())
     state.kline_buffers.clear()
     state.selected_assets = []
     state.asset_regimes.clear()
@@ -154,9 +152,10 @@ async def stop_system():
 async def reset_system():
     if state.is_running:
         state.is_running = False
-        if state.adapter:
-            await state.adapter.stop()
-    state.orchestrator._paper.reset()
+        if state.connector:
+            await state.connector.stop()
+    if state.connector:
+        state.connector.reset()
     state.equity_history.clear()
     state.latest_logs.clear()
     state.kline_buffers.clear()
@@ -173,14 +172,19 @@ async def reset_system():
 @app.post("/api/system/flatten")
 async def emergency_flatten():
     state.is_running = False
-    if state.adapter:
-        await state.adapter.stop()
-    engine = state.orchestrator._paper
-    for pos in engine.open_positions:
-        engine._execute_market_exit(pos, pos.current_price, datetime.now(timezone.utc))
+    if state.connector:
+        await state.connector.stop()
+        state.connector.emergency_flatten()
     log_msg(state, "EMERGENCY FLATTEN: All active positions liquidated. System offline.")
     await broadcast_telemetry()
     return {"status": "flattened"}
+
+
+@app.get("/api/trades/export")
+async def export_trades():
+    """Export all completed trades as JSON (Phase 9)."""
+    trades = state.persistence.get_trade_history(limit=5000)
+    return {"status": "success", "trades": trades}
 
 
 # ---------------------------------------------------------
@@ -209,7 +213,10 @@ manager = ConnectionManager()
 
 
 async def broadcast_telemetry():
-    snap = state.orchestrator._paper.snapshot()
+    if not state.connector:
+        return
+        
+    snap = state.connector.snapshot()
     live_equity = snap.equity
 
     if not state.equity_history:
@@ -246,8 +253,8 @@ async def broadcast_telemetry():
         "max_drawdown_pct": snap.max_drawdown_pct,
         "signals_generated": state.orchestrator._signals_generated,
         "signals_filled": state.orchestrator._signals_filled,
-        "open_positions": [p.model_dump(mode='json') for p in state.orchestrator._paper.open_positions],
-        "closed_positions": [t.model_dump(mode='json') for t in state.orchestrator._paper._trade_history[-20:]],
+        "open_positions": [p.model_dump(mode='json') for p in state.connector.open_positions],
+        "closed_positions": [t.model_dump(mode='json') for t in state.connector.trade_history[-20:]],
         "equity_curve": state.equity_history,
         "scored_assets": live_assets,
         "active_assets": state.selected_assets,
