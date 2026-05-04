@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from algoforge.core.constants import Direction, MarketRegime, Timeframe
+from algoforge.core.constants import Direction, MarketRegime, Timeframe, OrderType, TimeInForce
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +199,8 @@ class Signal(BaseModel):
     entry_price: float = Field(..., gt=0, description="Target entry price")
     stop_loss: float = Field(..., gt=0, description="Mandatory stop loss price")
     take_profit: float = Field(..., gt=0, description="Take profit price")
+    order_type: OrderType = Field(default=OrderType.MARKET, description="Type of order to place")
+    time_in_force: TimeInForce = Field(default=TimeInForce.GTC, description="Time in force for limit orders")
     timeframe: Timeframe = Field(default=Timeframe.M1, description="Timeframe the signal was generated on")
     regime: MarketRegime | None = Field(default=None, description="Market regime at signal time")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

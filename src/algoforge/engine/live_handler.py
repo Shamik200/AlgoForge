@@ -54,15 +54,21 @@ async def handle_live_tick(
 
     # 1. ORDER BOOK UPDATE (Bid/Ask)
     if data["type"] == "book":
-        state.live_books[sym] = {"bid": data["bid"], "ask": data["ask"]}
-        engine = state.orchestrator._paper
-        engine.update_prices({sym: data["bid"]})
-        closed_trades = engine.check_exits()
-        for trade in closed_trades:
-            log_msg(state, f"POSITION CLOSED: {trade.symbol} at ${trade.exit_price:.2f} | PnL: ${trade.pnl:.2f}")
-            # Phase 4: Persist closed trade to SQLite
-            state.persist_trade(trade)
-            await broadcast_fn()
+        state.live_books[sym] = {
+            "bid": data["bid"],
+            "ask": data["ask"],
+            "bid_qty": data.get("bid_qty", float("inf")),
+            "ask_qty": data.get("ask_qty", float("inf"))
+        }
+        if state.connector:
+            state.connector.update_prices({sym: data["bid"]})
+            state.connector.check_circuit_breaker({sym: data["bid"]})
+            closed_trades = state.connector.check_exits()
+            for trade in closed_trades:
+                log_msg(state, f"POSITION CLOSED: {trade.symbol} at ${trade.exit_price:.2f} | PnL: ${trade.pnl:.2f}")
+                # Phase 4: Persist closed trade to SQLite
+                state.persist_trade(trade)
+                await broadcast_fn()
 
     # 2. KLINE CLOSE — full pipeline
     elif data["type"] == "kline" and data["is_closed"]:
@@ -160,6 +166,7 @@ async def handle_live_tick(
                 current_bar=series.count,
                 ml_features=ml_features if state._ml_trained else None,
                 signal_family_results=signal_family_results,
+                order_book=state.live_books.get(sym),
             )
 
             # Log fills

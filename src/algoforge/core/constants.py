@@ -62,6 +62,13 @@ class OrderType(str, Enum):
     STOP_LOSS = "stop_loss"
     TAKE_PROFIT = "take_profit"
 
+class TimeInForce(str, Enum):
+    """Time in force for limit orders."""
+    
+    GTC = "GTC"  # Good Till Canceled
+    IOC = "IOC"  # Immediate Or Cancel
+    FOK = "FOK"  # Fill Or Kill
+
 
 # ---------------------------------------------------------------------------
 # Market Hours (UTC-based trading windows)

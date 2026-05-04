@@ -58,7 +58,12 @@ class Orchestrator:
     ) -> None:
         self._strategies = strategies or []
         from algoforge.core.constants import Market
-        self._paper = PaperTradingEngine(initial_capital=capital, market=Market.CRYPTO, risk_config=risk_config)
+        from algoforge.execution.paper import PaperTradingEngine
+        from algoforge.connectors.factory import ConnectorFactory
+        
+        paper_engine = PaperTradingEngine(initial_capital=capital, market=Market.CRYPTO, risk_config=risk_config)
+        self.connector = ConnectorFactory.create(mode="paper", paper_engine=paper_engine)
+        
         self._fundamental = FundamentalPipeline() if enable_fundamentals else None
         self._dual_tf = DualTimeframeFilter() if enable_dual_tf else None
         self._ml = MLPipeline(train_size=1000, test_size=200, forward_bars=5) if enable_ml else None
@@ -104,6 +109,7 @@ class Orchestrator:
         daily_volume: float | None = None,
         current_bar: int = 0,
         signal_family_results: list[SignalResult] | None = None,
+        order_book: dict | None = None,
     ) -> list[FillResult]:
         """Process one bar through the full pipeline.
 
@@ -115,17 +121,18 @@ class Orchestrator:
             signal_family_results: Pre-computed signal family outputs.
                 If provided, these go through the CombinationEngine
                 for composite scoring and health throttling.
+            order_book: Optional live order book data for realistic slippage.
         """
         results: list[FillResult] = []
         active_regime = regime_result.primary_regime
 
         # Step 0: Check circuit breaker with current prices
         current_prices = {symbol: closes[-1]}
-        self._paper.risk_manager.check_circuit_breaker(current_prices)
+        self.connector.check_circuit_breaker(current_prices)
 
         # Step 1: Update prices and check exits on existing positions
-        self._paper.update_prices(current_prices)
-        self._paper.check_exits(current_bar=current_bar)
+        self.connector.update_prices(current_prices)
+        self.connector.check_exits(current_bar=current_bar)
 
         # Step 2: Activate regime-matched strategies
         raw_signals: list[Signal] = []
@@ -187,10 +194,11 @@ class Orchestrator:
 
         # Step 6: Submit to paper trading (includes risk validation)
         for sig in filtered:
-            fill = self._paper.submit_signal(
+            fill = self.connector.submit_order(
                 sig,
                 daily_volume=daily_volume,
                 conviction=composite_conviction,
+                order_book=order_book,
             )
             results.append(fill)
             if fill.filled:
@@ -216,9 +224,9 @@ class Orchestrator:
             "signals_generated": self._signals_generated,
             "signals_approved": self._signals_approved,
             "signals_filled": self._signals_filled,
-            "portfolio": self._paper.snapshot().model_dump(),
+            "portfolio": self.connector.snapshot().model_dump(),
         }
 
     @property
-    def paper_engine(self) -> PaperTradingEngine:
-        return self._paper
+    def paper_engine(self) -> Any:
+        return self.connector

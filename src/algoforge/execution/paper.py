@@ -97,7 +97,7 @@ class PaperTradingEngine:
     FEE_STRUCTURES: dict[Market, dict[str, float]] = {
         Market.STOCKS_US: {"commission_per_share": 0.005, "min_commission": 1.0, "tax_rate": 0.0},
         Market.STOCKS_INDIA: {"commission_pct": 0.0003, "stt_pct": 0.001, "gst_pct": 0.18, "min_commission": 20.0},
-        Market.CRYPTO: {"commission_pct": 0.0004, "min_commission": 0.0, "tax_rate": 0.0},
+        Market.CRYPTO: {"maker_fee_pct": 0.0002, "taker_fee_pct": 0.0004, "min_commission": 0.0, "tax_rate": 0.0},
         Market.FOREX: {"spread_pips": 1.5, "commission_per_lot": 3.5, "min_commission": 0.0},
     }
 
@@ -166,12 +166,13 @@ class PaperTradingEngine:
         signal: Signal,
         daily_volume: float | None = None,
         conviction: float = 1.0,
+        order_book: dict | None = None,
     ) -> FillResult:
         """Submit a signal for paper execution.
 
         Steps:
         1. Run through RiskManager validation
-        2. Apply slippage to entry price
+        2. Apply dynamic order book slippage (Phase 8 Realism)
         3. Calculate commissions
         4. Create position if all checks pass
         """
@@ -231,12 +232,43 @@ class PaperTradingEngine:
                     rejection_reason="OMS: Duplicate order (idempotency guard)",
                 )
 
-        # Apply slippage (PAPR-01)
-        slippage = signal.entry_price * self._slippage_pct
-        if signal.direction == Direction.LONG:
-            fill_price = signal.entry_price + slippage  # Worse fill for longs
+        # Apply slippage (PAPR-01) - Execution Realism (Phase 8)
+        import math
+        qty = risk_result.position_size
+        
+        if order_book and "ask" in order_book and "bid" in order_book and order_book["ask"] > 0:
+            if signal.direction == Direction.LONG:
+                base_price = order_book["ask"]
+                available_qty = order_book.get("ask_qty", float("inf"))
+            else:
+                base_price = order_book["bid"]
+                available_qty = order_book.get("bid_qty", float("inf"))
+
+            tif = getattr(signal, 'time_in_force', TimeInForce.GTC)
+            if qty > available_qty:
+                if tif == TimeInForce.FOK:
+                    return FillResult(
+                        filled=False,
+                        rejection_reason="FOK order killed: Insufficient liquidity",
+                    )
+                elif tif == TimeInForce.IOC:
+                    # Partial fill: only take what's available
+                    qty = available_qty
+                    risk_result.position_size = qty
+
+            # Volume-weighted slippage: larger orders = more slippage (eat into book depth)
+            depth_penalty = math.sqrt(qty / max(available_qty, 0.0001)) * 0.0005 if available_qty < float("inf") else 0
+            if signal.direction == Direction.LONG:
+                fill_price = base_price * (1 + depth_penalty)
+            else:
+                fill_price = base_price * (1 - depth_penalty)
         else:
-            fill_price = signal.entry_price - slippage  # Worse fill for shorts
+            # Fallback to static percentage if order book is missing
+            slippage = signal.entry_price * self._slippage_pct
+            if signal.direction == Direction.LONG:
+                fill_price = signal.entry_price + slippage  # Worse fill for longs
+            else:
+                fill_price = signal.entry_price - slippage  # Worse fill for shorts
 
         # Simulate latency (PAPR-03)
         actual_latency_ms = self._latency_ms
@@ -252,9 +284,15 @@ class PaperTradingEngine:
             else:
                 fill_price -= abs(latency_impact)  # Adverse fill for shorts
 
+        # Determine Maker/Taker (Phase 8 Execution Realism)
+        is_maker = False
+        if hasattr(signal, 'order_type') and signal.order_type == OrderType.LIMIT:
+            if hasattr(signal, 'time_in_force') and signal.time_in_force == TimeInForce.GTC:
+                is_maker = True
+
         # Calculate commission (PAPR-02)
         commission = self._calculate_commission(
-            fill_price, risk_result.position_size
+            fill_price, risk_result.position_size, is_maker=is_maker
         )
 
         # Check cash available
@@ -396,16 +434,17 @@ class PaperTradingEngine:
 
         return closed
 
-    def _calculate_commission(self, price: float, quantity: float) -> float:
+    def _calculate_commission(self, price: float, quantity: float, is_maker: bool = False) -> float:
         """Calculate commission based on market fee structure."""
         fees = self.FEE_STRUCTURES.get(self._market, {})
 
         if "commission_per_share" in fees:
             # US stocks
             comm = max(quantity * fees["commission_per_share"], fees.get("min_commission", 0))
-        elif "commission_pct" in fees:
+        elif "commission_pct" in fees or "taker_fee_pct" in fees:
             # India/Crypto
-            comm = max(price * quantity * fees["commission_pct"], fees.get("min_commission", 0))
+            fee_pct = fees.get("maker_fee_pct", 0) if is_maker else fees.get("taker_fee_pct", fees.get("commission_pct", 0))
+            comm = max(price * quantity * fee_pct, fees.get("min_commission", 0))
             if "stt_pct" in fees:
                 comm += price * quantity * fees["stt_pct"]
         elif "spread_pips" in fees:
