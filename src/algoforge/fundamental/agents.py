@@ -64,7 +64,7 @@ class MockLLMClient:
                 persona="Growth", score=score, confidence=0.7,
                 reasoning=["Revenue growth > 20%", "Margin expansion visible"], flags=[]
             )
-        elif "Momentum Analyst" in prompt:
+        elif "Momentum" in prompt:
             return AnalystOpinion(
                 persona="Momentum", score=0.4, confidence=0.9,
                 reasoning=["Strong relative strength", "Breakout confirmed"], flags=["Overbought RSI"]
@@ -79,7 +79,10 @@ class MockLLMClient:
                 symbol="UNKNOWN", composite_score=0.45, decision="BUY",
                 allocation_weight=0.5, consensus_summary="All analysts lean positive."
             )
-        return schema.model_construct()
+        
+        if schema == ConsensusOutput:
+            return ConsensusOutput(symbol="UNKNOWN", composite_score=0.0, decision="HOLD", allocation_weight=0.0, consensus_summary="")
+        return AnalystOpinion(persona="Unknown", score=0.0, confidence=0.0, reasoning=[], flags=[])
 
 
 # --- Analyst Personas ---

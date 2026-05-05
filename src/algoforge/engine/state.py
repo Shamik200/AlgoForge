@@ -131,9 +131,9 @@ class SystemState:
             return
 
         try:
-            engine = self.orchestrator._paper
-            snap = engine.snapshot()
-            positions = [p.model_dump(mode='json') for p in engine.open_positions]
+            connector = self.orchestrator.connector
+            snap = connector.snapshot()
+            positions = [p.model_dump(mode='json') for p in connector.get_open_positions()]
             self.persistence.save_full_state(
                 equity=snap.equity,
                 cash=snap.cash,
@@ -156,9 +156,12 @@ class SystemState:
             if "ml_trained" in state:
                 self._ml_trained = state["ml_trained"]
 
-            engine = self.orchestrator._paper
-            if engine:
-                engine.load_state(state)
+            connector = self.orchestrator.connector
+            if hasattr(connector, 'engine') and hasattr(connector.engine, 'load_state'):
+                connector.engine.load_state(state)
+            elif hasattr(connector, 'paper') and hasattr(connector.paper.engine, 'load_state'):
+                # For shadow connector
+                connector.paper.engine.load_state(state)
             
             # Phase 10: Restore trained ML model
             if self._ml_trained and self.orchestrator._ml:

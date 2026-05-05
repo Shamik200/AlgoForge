@@ -30,8 +30,7 @@ def test_full_pipeline_end_to_end():
     assert orch._fundamental is not None
     assert orch._ml is not None
     assert orch._combination is not None
-    assert orch._paper is not None
-    assert orch.paper_engine.risk_manager is not None
+    assert orch.paper_engine is not None
     
     # 2. Mock input data for a single bar
     # Technical Indicators

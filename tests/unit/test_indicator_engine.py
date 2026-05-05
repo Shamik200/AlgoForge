@@ -62,17 +62,17 @@ class TestIndicatorEngine:
     """Test IndicatorEngine orchestrator."""
 
     def test_engine_has_8_core_indicators_by_default(self) -> None:
-        """Engine registers 8 core orthogonal indicators by default."""
+        """Engine registers 9 core orthogonal indicators by default."""
         engine = IndicatorEngine()
-        assert engine.indicator_count == 8
-        assert engine.core_count == 8
+        assert engine.indicator_count == 9
+        assert engine.core_count == 9
         assert engine.tool_count == 0
 
     def test_engine_loads_supporting_tools(self) -> None:
         """Engine can load optional supporting tools."""
         engine = IndicatorEngine(include_tools=["donchian", "keltner"])
-        assert engine.indicator_count == 10
-        assert engine.core_count == 8
+        assert engine.indicator_count == 11
+        assert engine.core_count == 9
         assert engine.tool_count == 2
         
         tool_names = [i.name for i in engine.tool_indicators]
@@ -90,8 +90,8 @@ class TestIndicatorEngine:
         series = _make_series("AAPL", Timeframe.D1, 200)
         snapshot = engine.compute(series)
 
-        # 8 core + 1 tool = 9 results
-        assert len(snapshot.indicator_names) == 9
+        # 9 core + 1 tool = 10 results
+        assert len(snapshot.indicator_names) == 10
 
     def test_engine_caching(self) -> None:
         """Results are cached by symbol/timeframe."""
@@ -101,7 +101,7 @@ class TestIndicatorEngine:
 
         cached = engine.get_cached("AAPL", Timeframe.D1)
         assert cached is not None
-        assert len(cached.indicator_names) == 8
+        assert len(cached.indicator_names) == 9
 
     def test_engine_cache_miss(self) -> None:
         """Cache miss returns None."""
@@ -137,7 +137,7 @@ class TestIndicatorEngine:
         snapshot = engine.compute(series)
 
         # Most core indicators need > 10 candles
-        assert len(snapshot.indicator_names) < 8
+        assert len(snapshot.indicator_names) < 9
 
     def test_engine_empty_series(self) -> None:
         """Empty series produces empty snapshot."""
@@ -153,7 +153,7 @@ class TestIndicatorEngine:
         stats = engine.stats
         assert stats["total_computations"] == 1
         assert stats["total_time_ms"] > 0
-        assert stats["core_count"] == 8
+        assert stats["core_count"] == 9
         assert stats["tool_count"] == 1
 
     def test_engine_custom_params(self) -> None:

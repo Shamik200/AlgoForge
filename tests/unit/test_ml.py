@@ -18,8 +18,8 @@ def test_feature_builder_output_shape():
         returns_1=0.01, returns_5=0.03,
         hour=14, day_of_week=3, month=9,
     )
-    # Should produce exactly 44 features (6+12+4+4+8+4+6)
-    assert features.shape == (44,)
+    # Should produce exactly 60 features (44 + 16 Alpha158 features)
+    assert features.shape == (60,)
     assert features.dtype == np.float64
 
 
@@ -156,7 +156,7 @@ def test_ml_pipeline_end_to_end():
     lows = closes - np.abs(np.random.randn(n)) * 0.5
 
     # Generate synthetic features
-    features = np.random.randn(n, 44)
+    features = np.random.randn(n, 60)
 
     pipeline = MLPipeline(
         forward_bars=5, atr_threshold_mult=0.5,

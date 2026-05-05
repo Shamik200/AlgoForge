@@ -153,8 +153,9 @@ class TestOrchestrator:
         assert orch.stats["signals_generated"] == 0
 
     def test_paper_engine_accessible(self) -> None:
-        orch = Orchestrator(capital=50_000)
-        assert orch.paper_engine.equity == 50_000
+        """Ensure the underlying paper engine/connector is accessible."""
+        orch = Orchestrator(capital=50_000, enable_fundamentals=False)
+        assert orch.paper_engine.snapshot().equity == 50_000
 
     def test_fundamental_filtering(self) -> None:
         """Fundamentals block signal when gate score is too low."""
