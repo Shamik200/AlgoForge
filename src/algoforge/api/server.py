@@ -256,7 +256,20 @@ async def broadcast_telemetry():
             "ask": book.get("ask", 0.0),
         })
 
-    msg = {
+    import math
+    
+    def scrub_nans(obj):
+        if isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj):
+                return 0.0
+            return obj
+        elif isinstance(obj, dict):
+            return {k: scrub_nans(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [scrub_nans(v) for v in obj]
+        return obj
+
+    msg = scrub_nans({
         "status": "RUNNING" if state.is_running else "STOPPED",
         "equity": live_equity,
         "cash": round(snap.cash, 2),
@@ -275,7 +288,8 @@ async def broadcast_telemetry():
         "scored_assets": live_assets,
         "active_assets": state.selected_assets,
         "logs": state.latest_logs,
-    }
+    })
+    
     await manager.broadcast(msg)
 
 
