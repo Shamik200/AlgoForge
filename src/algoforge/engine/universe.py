@@ -64,7 +64,10 @@ class VolumePairList(PairlistPlugin):
             filtered.append(asset)
             
         filtered.sort(key=lambda x: x.get("volume", 0), reverse=True)
-        return filtered[:self.limit]
+        result = filtered[:self.limit]
+        logger.info("filter.volume", input=len(universe), passed_liquidity=len(filtered), output=len(result),
+                    min_liquidity=state.discovery_config.min_liquidity)
+        return result
 
 
 class MarketCapFilter(PairlistPlugin):
@@ -75,17 +78,22 @@ class MarketCapFilter(PairlistPlugin):
     as a rough proxy (top coins trade >$100M/day).
     """
     
-    def __init__(self, min_market_cap_proxy: float = 50_000_000.0):
+    def __init__(self, min_market_cap_proxy: float = 5_000_000.0):
         self.min_mcap = min_market_cap_proxy
         
     def filter(self, state: SystemState, universe: list[dict]) -> list[dict]:
         filtered = []
         for asset in universe:
             # Use quoteVolume (24h USDT volume) as a market cap proxy.
-            # Legitimate large-cap coins trade > $50M/day in USDT volume.
+            # Lowered from $50M to $5M to include mid-cap altcoins
+            # that still have sufficient liquidity for paper trading.
             quote_vol = asset.get("quoteVolume", asset.get("volume", 0))
             if quote_vol >= self.min_mcap:
                 filtered.append(asset)
+        
+        removed = len(universe) - len(filtered)
+        if removed > 0:
+            logger.info("filter.market_cap", input=len(universe), output=len(filtered), removed=removed, threshold=self.min_mcap)
         return filtered
 
 
@@ -111,7 +119,7 @@ class SpreadFilter(PairlistPlugin):
 class VolatilityFilter(PairlistPlugin):
     """Filters out assets that are too stable or insanely volatile."""
     
-    def __init__(self, min_vol_pct: float = 1.0, max_vol_pct: float = 15.0):
+    def __init__(self, min_vol_pct: float = 0.3, max_vol_pct: float = 15.0):
         self.min_vol = min_vol_pct
         self.max_vol = max_vol_pct
         
@@ -128,6 +136,11 @@ class VolatilityFilter(PairlistPlugin):
             if self.min_vol <= vol_pct <= self.max_vol:
                 asset["_vol_pct"] = round(vol_pct, 2)
                 filtered.append(asset)
+        
+        removed = len(universe) - len(filtered)
+        if removed > 0:
+            logger.info("filter.volatility", input=len(universe), output=len(filtered), removed=removed,
+                        min_vol=self.min_vol, max_vol=self.max_vol)
         return filtered
 
 
@@ -246,16 +259,21 @@ class PairListManager:
     def __init__(self):
         self.plugins = [
             VolumePairList(limit=100),
-            MarketCapFilter(min_market_cap_proxy=50_000_000.0),
+            MarketCapFilter(min_market_cap_proxy=5_000_000.0),
             SpreadFilter(max_spread_pct=0.5),
-            VolatilityFilter(min_vol_pct=0.5, max_vol_pct=15.0),
+            VolatilityFilter(min_vol_pct=0.3, max_vol_pct=15.0),
             QualityScorer(),
         ]
         
     def generate_universe(self, state: SystemState, raw_data: list[dict]) -> list[dict]:
         universe = raw_data
         for plugin in self.plugins:
+            before = len(universe)
             universe = plugin.filter(state, universe)
+            after = len(universe)
+            if before != after:
+                logger.debug("filter.pipeline", plugin=type(plugin).__name__,
+                           before=before, after=after)
         return universe
 
 

@@ -430,20 +430,6 @@ class PaperTradingEngine:
                 self._risk_manager.record_trade_result(pnl)
                 to_close.append(pid)
                 
-                # --- NEW LLM LAYER: Post-Trade Analysis ---
-                try:
-                    from algoforge.llm.client import FinLLMClient
-                    from algoforge.llm.prompts import PromptBuilder
-                    from algoforge.llm.schemas import PostTradeAnalysis
-                    llm = FinLLMClient()
-                    prompt = PromptBuilder.build_post_trade_prompt(pos)
-                    analysis = llm.analyze(prompt, PostTradeAnalysis)
-                    trade.metadata.update({"llm_analysis": analysis.analysis_summary, "rating": analysis.performance_rating})
-                except Exception as e:
-                    import logging
-                    logging.getLogger(__name__).warning("LLM Post-Trade Analysis failed: %s", e)
-                    trade.metadata = trade.metadata or {}
-
                 closed.append(trade)
 
                 logger.info(

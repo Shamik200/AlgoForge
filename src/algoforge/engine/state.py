@@ -44,9 +44,9 @@ class DiscoveryConfig(BaseModel):
     """Configuration for dynamic asset universe discovery."""
     market: str = "crypto"
     universe_size: int = 75
-    dynamic_threshold: float = 55.0  # Raised: new multi-factor scorer uses 0-100 range
+    dynamic_threshold: float = 40.0  # Lowered from 55: allows more mid-quality assets through
     min_liquidity: float = 500_000.0
-    max_active_assets: int = 8  # max concurrent WebSocket streams
+    max_active_assets: int = 15  # Increased from 8: more concurrent opportunities
 
 
 # ---------------------------------------------------------
@@ -74,7 +74,7 @@ class SystemState:
             max_weekly_loss_pct=0.10,            # 10% weekly loss limit
             max_correlation=0.85,                # crypto pairs are highly correlated
             min_risk_reward=1.2,                 # aligned with strategy min_rr=1.2
-            max_open_positions=8,                 # reduced from 10 to limit total exposure
+            max_open_positions=12,                # increased from 8 to match wider universe
             max_consecutive_losses=8,            # less aggressive cooldown trigger
             cooldown_bars=15,                    # 15 bars (~15min) not 1 hour
             max_directional_exposure_pct=0.60,   # tightened from 0.85 to cap net exposure
@@ -220,5 +220,5 @@ def log_msg(state: SystemState, msg: str) -> None:
     logger.info(msg)
     ts = datetime.now().strftime("%H:%M:%S")
     state.latest_logs.insert(0, f"[{ts}] {msg}")
-    if len(state.latest_logs) > 50:
+    if len(state.latest_logs) > 200:
         state.latest_logs.pop()

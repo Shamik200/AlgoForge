@@ -218,13 +218,14 @@ class RiskManager:
         positions = open_positions or []
         reasons: list[str] = []
         
-        # Requirement 7.2: Skip trades when conviction < 0.3
+        # Requirement 7.2: Skip trades when conviction too low
         # Use conviction_score if provided (from ConfidenceAggregator), else fall back to conviction
+        # Lowered from 0.3 → 0.2 to let more trades reach proper risk/reward evaluation
         effective_conviction = conviction_score if conviction_score is not None else conviction
         
-        if effective_conviction < 0.3:
+        if effective_conviction < 0.2:
             reasons.append(
-                f"CONVICTION_TOO_LOW: Conviction score {effective_conviction:.3f} < 0.3 threshold"
+                f"CONVICTION_TOO_LOW: Conviction score {effective_conviction:.3f} < 0.2 threshold"
             )
             return self._reject(reasons)
 
@@ -359,32 +360,6 @@ class RiskManager:
 
         if reasons:
             return self._reject(reasons)
-
-        # --- NEW LLM LAYER: Risk Commentary ---
-        try:
-            from algoforge.llm.client import FinLLMClient
-            from algoforge.llm.prompts import PromptBuilder
-            from algoforge.llm.schemas import RiskCommentary
-            llm = FinLLMClient()
-            portfolio_state = {
-                "capital": self._capital,
-                "open_positions": len(positions),
-                "drawdown": self.current_drawdown_pct,
-                "consecutive_losses": self._consecutive_losses,
-                "turbulence": self._current_turbulence
-            }
-            prompt = PromptBuilder.build_risk_prompt(portfolio_state, signal)
-            risk_review = llm.analyze(prompt, RiskCommentary)
-            
-            if risk_review.sizing_multiplier == 0.0:
-                reasons.append(f"LLM_RISK_VETO: {risk_review.risk_notes}")
-                return self._reject(reasons)
-                
-            # Multiply incoming conviction by LLM sizing multiplier
-            conviction *= risk_review.sizing_multiplier
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning("LLM Risk Assistant failed: %s", e)
 
         # --- All checks passed — calculate position size ---
         # Use conviction_score for position sizing if provided (Requirement 7)

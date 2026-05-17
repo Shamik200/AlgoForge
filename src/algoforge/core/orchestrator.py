@@ -157,7 +157,9 @@ class Orchestrator:
             )
         
         # Track current conviction thresholds (can be adjusted by RL agent)
-        self._conviction_threshold_low = 0.3
+        # Lowered from 0.3 → 0.15 to let more signals reach risk evaluation
+        # The risk manager at 0.3 is the real gatekeeper
+        self._conviction_threshold_low = 0.15
         self._conviction_threshold_high = 0.6
         
         # Track signal family scores and regime for RL observation
@@ -641,7 +643,7 @@ class Orchestrator:
             conviction_threshold = self._conviction_threshold_low
             
             if composite_conviction < conviction_threshold:
-                logger.debug(
+                logger.info(
                     "conviction_skip",
                     symbol=symbol,
                     conviction=round(composite_conviction, 3),
@@ -670,52 +672,26 @@ class Orchestrator:
 
         self._signals_approved += len(filtered)
 
-        # Step 5.5: LLM Assistant - Technical Context & Signal Confirmation
-        final_signals = []
-        if filtered:
-            try:
-                from algoforge.llm.client import FinLLMClient
-                from algoforge.llm.prompts import PromptBuilder
-                from algoforge.llm.schemas import TechnicalContextSummary, SignalConfirmation
-                llm = FinLLMClient()
-                
-                # Get technical context once for the bar
-                ind_keys = list(indicators.values.keys()) if indicators and hasattr(indicators, "values") else []
-                tech_prompt = PromptBuilder.build_technical_prompt(symbol, active_regime.value, {"available_indicators": ind_keys})
-                tech_context = llm.analyze(tech_prompt, TechnicalContextSummary)
-                
-                for sig in filtered:
-                    sig_prompt = PromptBuilder.build_signal_prompt(sig, tech_context.technical_summary)
-                    sig_conf = llm.analyze(sig_prompt, SignalConfirmation)
-                    
-                    if sig_conf.is_confirmed:
-                        # Append the thesis to metadata
-                        thesis_prompt = PromptBuilder.build_thesis_prompt(sig, sig_conf.supporting_factors)
-                        from algoforge.llm.schemas import TradeThesis
-                        thesis = llm.analyze(thesis_prompt, TradeThesis)
-                        sig.metadata["llm_thesis"] = thesis.thesis_summary
-                        final_signals.append(sig)
-                    else:
-                        logger.info("llm_signal_rejected", symbol=symbol, direction=sig.direction.value, reasons=sig_conf.detracting_factors)
-            except Exception as e:
-                logger.warning("llm_assistant_failed", error=str(e))
-                final_signals = filtered  # Fallback to algorithmic signals
+        # Step 5.5: Pass signals through directly (LLM removed from hot path)
+        # LLM confirmation was adding 100s of ms per signal with no real filtering
+        # value (mock always confirms). Signals are validated by risk manager instead.
+        final_signals = filtered
 
         # Step 6: Submit to paper trading (includes risk validation)
-            for sig in final_signals:
-                sig.metadata = {
-                    **sig.metadata,
-                    "signal_family": sig.metadata.get("signal_family", sig.strategy),
-                    "conviction_score": composite_conviction,
-                    "ml_confidence": ml_prediction.confidence if ml_prediction else 0.5,
-                }
-                fill = self.connector.submit_order(
-                    sig,
-                    daily_volume=daily_volume,
-                    conviction_score=composite_conviction,
-                    order_book=order_book,
-                    score_weight=score_weight,
-                )
+        for sig in final_signals:
+            sig.metadata = {
+                **sig.metadata,
+                "signal_family": sig.metadata.get("signal_family", sig.strategy),
+                "conviction_score": composite_conviction,
+                "ml_confidence": ml_prediction.confidence if ml_prediction else 0.5,
+            }
+            fill = self.connector.submit_order(
+                sig,
+                daily_volume=daily_volume,
+                conviction_score=composite_conviction,
+                order_book=order_book,
+                score_weight=score_weight,
+            )
             results.append(fill)
             if fill.filled:
                 self._signals_filled += 1

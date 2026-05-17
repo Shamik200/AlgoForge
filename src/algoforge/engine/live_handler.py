@@ -131,6 +131,7 @@ async def handle_live_tick(
             regime_name = regime_result.primary_regime.value
             state.asset_regimes[sym] = regime_name
             state.asset_confidence[sym] = round(regime_result.confidence, 3)
+            log_msg(state, f"[{sym}] REGIME: {regime_name} (conf={regime_result.confidence:.2f})")
 
             # ── STEP 4: SIGNAL FAMILIES (Phase 6 — was dead code!) ─────
             signal_family_results = _compute_signal_families(
@@ -163,11 +164,13 @@ async def handle_live_tick(
 
             # Log signal family activity
             active_families = [s.family_name for s in signal_family_results if s.is_valid]
+            all_scores = ", ".join(
+                f"{s.family_name}={s.score:+.3f}" for s in signal_family_results
+            )
             if active_families:
-                scores_str = ", ".join(
-                    f"{s.family_name}={s.score:+.3f}" for s in signal_family_results if s.is_valid
-                )
-                log_msg(state, f"[{sym}] SIGNALS | {scores_str}")
+                log_msg(state, f"[{sym}] SIGNALS | {all_scores}")
+            else:
+                log_msg(state, f"[{sym}] SCANNING | No active signals | scores: {all_scores}")
 
             # ── STEP 5: BUILD ML FEATURES ───────────────────────────
             ml_features = _build_ml_features(

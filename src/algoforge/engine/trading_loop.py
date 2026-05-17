@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Callable, Awaitable
 
 import asyncio
+import time
 import structlog
 
 from algoforge.connectors.factory import ConnectorFactory
@@ -47,14 +48,19 @@ async def trading_engine_loop(
     while state.is_running:
         try:
             # STEP 1: Universe Construction (REST)
-            log_msg(state, "Fetching Live Universe (Top 50 USDT Pairs)...")
+            t0 = time.monotonic()
+            log_msg(state, "⏳ Fetching Live Universe (Top 50 USDT Pairs)...")
             universe = state.connector.fetch_top_n_universe(
                 state.discovery_config.universe_size
             )
+            t1 = time.monotonic()
+            log_msg(state, f"✅ Universe fetched: {len(universe)} raw pairs ({t1-t0:.1f}s)")
 
             # STEP 2: Multi-Factor Scoring
-            log_msg(state, f"Running Multi-Factor Scoring on {len(universe)} assets...")
+            log_msg(state, f"📊 Running Multi-Factor Scoring on {len(universe)} assets...")
             scores = score_universe(state, universe)
+            t2 = time.monotonic()
+            log_msg(state, f"✅ Scoring complete: {len(scores)} scored ({t2-t1:.1f}s)")
 
             # STEP 3: Dynamic Top-K Selection
             selected = select_top_assets(state, scores)
@@ -62,28 +68,32 @@ async def trading_engine_loop(
             state.scored_assets = scores
             state.selected_assets = [s["symbol"] for s in selected]
 
+            above_threshold = len([s for s in scores if s.get("score", 0) >= state.discovery_config.dynamic_threshold])
             log_msg(
                 state,
-                f"Selection: {len(selected)} assets active "
+                f"🎯 Selection: {len(selected)} assets active "
                 f"(threshold={state.discovery_config.dynamic_threshold}, "
-                f"above={len([s for s in scores if s.get('score', 0) >= state.discovery_config.dynamic_threshold])})"
+                f"above={above_threshold}, max={state.discovery_config.max_active_assets})"
             )
 
             # STEP 4: Pre-fetch Historical Klines in PARALLEL
+            log_msg(state, f"📥 Pre-fetching klines for {len(state.selected_assets)} assets...")
             await prefetch_klines(state)
+            t3 = time.monotonic()
+            log_msg(state, f"✅ Klines ready ({t3-t2:.1f}s)")
 
             # STEP 5: Start Async WebSocket Stream
             if state.selected_assets:
                 log_msg(
                     state,
-                    f"Initiating Live WebSocket Streams for "
-                    f"{len(state.selected_assets)} assets..."
+                    f"🔌 Initiating Live WebSocket Streams for "
+                    f"{len(state.selected_assets)} assets: {', '.join(state.selected_assets[:5])}..."
                 )
                 await state.connector.start_streams(state.selected_assets, callback=on_tick)
             else:
-                log_msg(state, "No assets passed the dynamic threshold. Waiting for next cycle...")
+                log_msg(state, "⚠️ No assets passed the dynamic threshold. Waiting 60s for next cycle...")
                 await asyncio.sleep(60)
 
         except Exception as e:
-            log_msg(state, f"Critical Engine Error: {str(e)}")
+            log_msg(state, f"❌ Critical Engine Error: {str(e)}")
             await asyncio.sleep(10)
