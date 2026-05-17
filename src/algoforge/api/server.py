@@ -125,7 +125,23 @@ async def start_system():
         await broadcast_telemetry()
         return {"status": "already_running"}
     state.is_running = True
-    asyncio.create_task(trading_engine_loop(state, broadcast_telemetry))
+    
+    # Store task reference to prevent GC and catch errors
+    task = asyncio.create_task(trading_engine_loop(state, broadcast_telemetry))
+    
+    def _on_task_done(t: asyncio.Task) -> None:
+        """Log any unhandled exceptions from the trading loop."""
+        try:
+            exc = t.exception()
+            if exc:
+                logger.error("trading_loop_crashed", error=str(exc), exc_info=exc)
+                log_msg(state, f"TRADING LOOP CRASHED: {exc}")
+        except asyncio.CancelledError:
+            logger.info("trading_loop_cancelled")
+    
+    task.add_done_callback(_on_task_done)
+    state._engine_task = task  # prevent GC
+    
     # Reset cooldown so prior session losses don't block fresh start
     if state.connector:
         state.connector.reset_risk_limits()
