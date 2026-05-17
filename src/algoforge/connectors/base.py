@@ -44,6 +44,7 @@ class ConnectorBase(abc.ABC):
         daily_volume: float | None = None,
         conviction: float = 1.0,
         order_book: dict | None = None,
+        score_weight: float = 1.0,
     ) -> FillResult:
         """Submit an order for execution."""
         pass

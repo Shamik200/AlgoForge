@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Play, Square, ShieldAlert, RefreshCw, Settings, TrendingUp, TrendingDown, Minus, Activity, Zap, DollarSign, BarChart2, AlertCircle } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
+import { Play, Square, ShieldAlert, RefreshCw, Settings, TrendingUp, TrendingDown, Minus, Activity, Zap, DollarSign, BarChart2, AlertCircle, Target, Brain, Gauge, TrendingUpDown, Lock, Unlock } from "lucide-react";
 
 const API = "http://127.0.0.1:8000";
 const WS  = "ws://127.0.0.1:8000/ws/telemetry";

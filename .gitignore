@@ -38,3 +38,23 @@ logs/
 
 # Planning scratch
 .planning/phases/*/scratch/
+
+# Node.js / Frontend
+node_modules/
+.next/
+.cache/
+out/
+build/
+dist/
+*.tsbuildinfo
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Hypothesis
+.hypothesis/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3

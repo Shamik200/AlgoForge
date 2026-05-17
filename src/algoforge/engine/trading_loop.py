@@ -11,7 +11,7 @@ from typing import Callable, Awaitable
 import asyncio
 import structlog
 
-from algoforge.api.binance_stream import BinanceAdapter
+from algoforge.connectors.factory import ConnectorFactory
 from algoforge.engine.state import SystemState, log_msg
 from algoforge.engine.universe import (
     score_universe,
@@ -41,13 +41,14 @@ async def trading_engine_loop(
     async def on_tick(data: dict) -> None:
         await handle_live_tick(state, data, broadcast_fn)
 
-    state.adapter = BinanceAdapter(callback=on_tick)
+    # Use the connector initialized by the Orchestrator
+    state.connector = state.orchestrator.connector
 
     while state.is_running:
         try:
             # STEP 1: Universe Construction (REST)
             log_msg(state, "Fetching Live Universe (Top 50 USDT Pairs)...")
-            universe = state.adapter.fetch_top_n_universe(
+            universe = state.connector.fetch_top_n_universe(
                 state.discovery_config.universe_size
             )
 
@@ -65,7 +66,7 @@ async def trading_engine_loop(
                 state,
                 f"Selection: {len(selected)} assets active "
                 f"(threshold={state.discovery_config.dynamic_threshold}, "
-                f"above={len([s for s in scores if s['score'] >= state.discovery_config.dynamic_threshold])})"
+                f"above={len([s for s in scores if s.get('score', 0) >= state.discovery_config.dynamic_threshold])})"
             )
 
             # STEP 4: Pre-fetch Historical Klines in PARALLEL
@@ -78,7 +79,7 @@ async def trading_engine_loop(
                     f"Initiating Live WebSocket Streams for "
                     f"{len(state.selected_assets)} assets..."
                 )
-                await state.adapter.start_streams(state.selected_assets)
+                await state.connector.start_streams(state.selected_assets, callback=on_tick)
             else:
                 log_msg(state, "No assets passed the dynamic threshold. Waiting for next cycle...")
                 await asyncio.sleep(60)

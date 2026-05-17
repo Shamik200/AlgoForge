@@ -17,7 +17,7 @@ from typing import Any
 import structlog
 from pydantic import BaseModel, Field
 
-from algoforge.core.constants import Direction, Market, Timeframe
+from algoforge.core.constants import Direction, Market, TimeInForce, Timeframe
 from algoforge.core.models import Position, Signal
 from algoforge.oms.manager import OrderManager
 from algoforge.oms.models import Order, OrderType
@@ -55,6 +55,7 @@ class TradeRecord(BaseModel):
     commission: float
     slippage: float
     bars_held: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class PortfolioSnapshot(BaseModel):
@@ -166,7 +167,9 @@ class PaperTradingEngine:
         signal: Signal,
         daily_volume: float | None = None,
         conviction: float = 1.0,
+        conviction_score: float | None = None,
         order_book: dict | None = None,
+        score_weight: float = 1.0,
     ) -> FillResult:
         """Submit a signal for paper execution.
 
@@ -183,6 +186,8 @@ class PaperTradingEngine:
             daily_volume=daily_volume,
             current_bar=self._current_bar,
             conviction=conviction,
+            score_weight=score_weight,
+            conviction_score=conviction_score,
         )
 
         # Generate correlation ID for OMS tracking
@@ -235,6 +240,7 @@ class PaperTradingEngine:
         # Apply slippage (PAPR-01) - Execution Realism (Phase 8)
         import math
         qty = risk_result.position_size
+        slippage = 0.0
         
         if order_book and "ask" in order_book and "bid" in order_book and order_book["ask"] > 0:
             if signal.direction == Direction.LONG:
@@ -262,6 +268,7 @@ class PaperTradingEngine:
                 fill_price = base_price * (1 + depth_penalty)
             else:
                 fill_price = base_price * (1 - depth_penalty)
+            slippage = abs(fill_price - signal.entry_price)
         else:
             # Fallback to static percentage if order book is missing
             slippage = signal.entry_price * self._slippage_pct
@@ -283,6 +290,7 @@ class PaperTradingEngine:
                 fill_price += abs(latency_impact)  # Adverse fill for longs
             else:
                 fill_price -= abs(latency_impact)  # Adverse fill for shorts
+            slippage = abs(fill_price - signal.entry_price)
 
         # Determine Maker/Taker (Phase 8 Execution Realism)
         is_maker = False
@@ -320,6 +328,7 @@ class PaperTradingEngine:
             take_profit=adjusted.take_profit,
             strategy=signal.strategy,
             opened_at=datetime.now(timezone.utc),
+            metadata=signal.metadata.copy(),
             current_price=fill_price,
         )
 
@@ -413,12 +422,28 @@ class PaperTradingEngine:
                     pnl=round(pnl, 2),
                     commission=round(commission, 2),
                     slippage=round(slippage, 4),
+                    metadata=pos.metadata.copy(),
                 )
 
                 self._trade_history.append(trade)
                 self._cash += (pos.entry_price * pos.quantity) + pnl
                 self._risk_manager.record_trade_result(pnl)
                 to_close.append(pid)
+                
+                # --- NEW LLM LAYER: Post-Trade Analysis ---
+                try:
+                    from algoforge.llm.client import FinLLMClient
+                    from algoforge.llm.prompts import PromptBuilder
+                    from algoforge.llm.schemas import PostTradeAnalysis
+                    llm = FinLLMClient()
+                    prompt = PromptBuilder.build_post_trade_prompt(pos)
+                    analysis = llm.analyze(prompt, PostTradeAnalysis)
+                    trade.metadata.update({"llm_analysis": analysis.analysis_summary, "rating": analysis.performance_rating})
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning("LLM Post-Trade Analysis failed: %s", e)
+                    trade.metadata = trade.metadata or {}
+
                 closed.append(trade)
 
                 logger.info(

@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from algoforge.fundamental import external_adapter
 from algoforge.fundamental.models import (
     FinancialMetrics,
     MacroEnvironment,
@@ -97,3 +98,12 @@ def test_pipeline_full_pass():
     assert result.screener is not None
     assert result.macro is not None
     assert len(result.selections) == 1
+
+
+def test_external_fundamental_adapter_is_available():
+    """Test the trading repo can load the sibling Fundamental-System adapter."""
+    assert external_adapter.available() is True
+
+    macro_data = external_adapter.fetch_macro_data()
+    assert macro_data is not None
+    assert "US_CPI" in macro_data

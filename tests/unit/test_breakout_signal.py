@@ -126,3 +126,172 @@ def test_volatility_breakout_guards():
     res_vol = signal.evaluate(series, bb_u, bb_l, regime_probs=regime_trend)
     assert res_vol.is_valid is False
     assert res_vol.metadata["filter_failed"] == "insufficient_volume"
+
+
+def test_trendline_break_bullish():
+    """Test bullish trendline break detection with volume confirmation."""
+    from algoforge.technical.structural.models import StructuralSnapshot, Trendline, SwingPoint
+    
+    signal = VolatilityBreakoutSignal(period=20)
+    
+    # Create series with price breaking above resistance trendline
+    series = OHLCVSeries(symbol="AAPL", timeframe=Timeframe.D1)
+    base_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    
+    # Build price data that approaches and breaks a resistance line at ~105
+    for i in range(25):
+        # Price gradually rises from 100 to 106
+        price = 100.0 + (i * 0.25)
+        volume = 10.0 if i < 24 else 50.0  # High volume on breakout bar
+        
+        series.append(OHLCV(
+            symbol="AAPL", timeframe=Timeframe.D1, timestamp=base_time + timedelta(days=i),
+            open=price, high=price + 1.0, low=price - 1.0, close=price, volume=volume
+        ))
+    
+    # Create a resistance trendline at ~105
+    swing_points = [
+        SwingPoint(index=10, price=102.5, is_high=True, volume=10.0, timestamp=base_time + timedelta(days=10)),
+        SwingPoint(index=20, price=105.0, is_high=True, volume=10.0, timestamp=base_time + timedelta(days=20)),
+    ]
+    
+    trendline = Trendline(
+        slope=0.25,  # Rising resistance
+        intercept=100.0,
+        touch_points=swing_points,
+        touches=2,
+        is_upper=True,
+        direction="resistance",
+        strength=3.0,
+        broken=False,
+        invalidated=False,
+    )
+    
+    snapshot = StructuralSnapshot(
+        symbol="AAPL",
+        trendlines=[trendline],
+    )
+    
+    bb_u = np.full(25, 110.0)
+    bb_l = np.full(25, 90.0)
+    
+    # Evaluate with trendline
+    result = signal.evaluate(series, bb_u, bb_l, structural_snapshot=snapshot)
+    
+    # Should detect bullish trendline break
+    assert result.is_valid is True
+    assert result.direction == SignalDirection.LONG
+    assert result.score > 0.7  # High conviction
+    assert result.metadata["pattern"] == "trendline_breakout_bullish"
+    assert "trendline_id" in result.metadata
+
+
+def test_trendline_break_bearish():
+    """Test bearish trendline break detection with volume confirmation."""
+    from algoforge.technical.structural.models import StructuralSnapshot, Trendline, SwingPoint
+    
+    signal = VolatilityBreakoutSignal(period=20)
+    
+    # Create series with price breaking below support trendline
+    series = OHLCVSeries(symbol="AAPL", timeframe=Timeframe.D1)
+    base_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    
+    # Build price data that approaches and breaks a support line at ~95
+    for i in range(25):
+        # Price gradually falls from 100 to 94
+        price = 100.0 - (i * 0.25)
+        volume = 10.0 if i < 24 else 50.0  # High volume on breakout bar
+        
+        series.append(OHLCV(
+            symbol="AAPL", timeframe=Timeframe.D1, timestamp=base_time + timedelta(days=i),
+            open=price, high=price + 1.0, low=price - 1.0, close=price, volume=volume
+        ))
+    
+    # Create a support trendline at ~95
+    swing_points = [
+        SwingPoint(index=10, price=97.5, is_high=False, volume=10.0, timestamp=base_time + timedelta(days=10)),
+        SwingPoint(index=20, price=95.0, is_high=False, volume=10.0, timestamp=base_time + timedelta(days=20)),
+    ]
+    
+    trendline = Trendline(
+        slope=-0.25,  # Falling support
+        intercept=100.0,
+        touch_points=swing_points,
+        touches=2,
+        is_upper=False,
+        direction="support",
+        strength=3.0,
+        broken=False,
+        invalidated=False,
+    )
+    
+    snapshot = StructuralSnapshot(
+        symbol="AAPL",
+        trendlines=[trendline],
+    )
+    
+    bb_u = np.full(25, 110.0)
+    bb_l = np.full(25, 90.0)
+    
+    # Evaluate with trendline
+    result = signal.evaluate(series, bb_u, bb_l, structural_snapshot=snapshot)
+    
+    # Should detect bearish trendline break
+    assert result.is_valid is True
+    assert result.direction == SignalDirection.SHORT
+    assert result.score < -0.7  # High conviction (negative)
+    assert result.metadata["pattern"] == "trendline_breakout_bearish"
+    assert "trendline_id" in result.metadata
+
+
+def test_trendline_break_no_volume():
+    """Test that trendline breaks without volume confirmation are ignored."""
+    from algoforge.technical.structural.models import StructuralSnapshot, Trendline, SwingPoint
+    
+    signal = VolatilityBreakoutSignal(period=20)
+    
+    # Create series with price breaking above resistance but LOW volume
+    series = OHLCVSeries(symbol="AAPL", timeframe=Timeframe.D1)
+    base_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    
+    for i in range(25):
+        price = 100.0 + (i * 0.25)
+        volume = 10.0  # Constant low volume (no spike)
+        
+        series.append(OHLCV(
+            symbol="AAPL", timeframe=Timeframe.D1, timestamp=base_time + timedelta(days=i),
+            open=price, high=price + 1.0, low=price - 1.0, close=price, volume=volume
+        ))
+    
+    swing_points = [
+        SwingPoint(index=10, price=102.5, is_high=True, volume=10.0, timestamp=base_time + timedelta(days=10)),
+        SwingPoint(index=20, price=105.0, is_high=True, volume=10.0, timestamp=base_time + timedelta(days=20)),
+    ]
+    
+    trendline = Trendline(
+        slope=0.25,
+        intercept=100.0,
+        touch_points=swing_points,
+        touches=2,
+        is_upper=True,
+        direction="resistance",
+        strength=3.0,
+        broken=False,
+        invalidated=False,
+    )
+    
+    snapshot = StructuralSnapshot(
+        symbol="AAPL",
+        trendlines=[trendline],
+    )
+    
+    bb_u = np.full(25, 110.0)
+    bb_l = np.full(25, 90.0)
+    
+    # Evaluate with trendline but no volume
+    result = signal.evaluate(series, bb_u, bb_l, structural_snapshot=snapshot)
+    
+    # Should NOT detect trendline break due to lack of volume
+    # Will fall through to standard breakout logic which also requires volume
+    assert result.is_valid is False
+    assert result.metadata.get("filter_failed") == "insufficient_volume"

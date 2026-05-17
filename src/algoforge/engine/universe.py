@@ -24,6 +24,14 @@ STABLECOIN_FRAGMENTS = frozenset(
     ["USDC", "FDUSD", "TUSD", "USD1", "USDD", "BUSD", "DAI", "USDE"]
 )
 
+# Meme / ultra-low-quality tokens that should never be traded.
+# Add symbols here to permanently exclude them from the universe.
+MEME_BLACKLIST = frozenset([
+    "DOGSUSDT", "SHIBUSDT", "PEPEUSDT", "FLOKIUSDT", "BONKUSDT",
+    "MEMECOINUSDT", "BABYDOGEUSDT", "ELONUSDT", "SAFEUSDT",
+    "LUNCUSDT", "LUNAUSDT", "USTCUSDT",
+])
+
 
 class PairlistPlugin(abc.ABC):
     """Base class for universe pairlist plugins."""
@@ -35,7 +43,7 @@ class PairlistPlugin(abc.ABC):
 
 
 class VolumePairList(PairlistPlugin):
-    """Base pairlist: selects top N pairs by volume, excluding stablecoins."""
+    """Base pairlist: selects top N pairs by volume, excluding stablecoins and blacklisted memes."""
     
     def __init__(self, limit: int = 75):
         self.limit = limit
@@ -44,7 +52,11 @@ class VolumePairList(PairlistPlugin):
         filtered = []
         for asset in universe:
             sym = asset["symbol"]
+            # Exclude stablecoins
             if any(stable in sym for stable in STABLECOIN_FRAGMENTS):
+                continue
+            # Exclude blacklisted meme coins
+            if sym in MEME_BLACKLIST:
                 continue
             # Ensure liquidity minimum
             if asset.get("volume", 0) < state.discovery_config.min_liquidity:
@@ -55,10 +67,51 @@ class VolumePairList(PairlistPlugin):
         return filtered[:self.limit]
 
 
+class MarketCapFilter(PairlistPlugin):
+    """Rejects assets below a minimum market cap threshold.
+    
+    Binance doesn't directly serve market cap, but we approximate it from
+    `circulating_supply * last_price` or fall back to using 24h quote volume
+    as a rough proxy (top coins trade >$100M/day).
+    """
+    
+    def __init__(self, min_market_cap_proxy: float = 50_000_000.0):
+        self.min_mcap = min_market_cap_proxy
+        
+    def filter(self, state: SystemState, universe: list[dict]) -> list[dict]:
+        filtered = []
+        for asset in universe:
+            # Use quoteVolume (24h USDT volume) as a market cap proxy.
+            # Legitimate large-cap coins trade > $50M/day in USDT volume.
+            quote_vol = asset.get("quoteVolume", asset.get("volume", 0))
+            if quote_vol >= self.min_mcap:
+                filtered.append(asset)
+        return filtered
+
+
+class SpreadFilter(PairlistPlugin):
+    """Rejects assets with excessively wide bid/ask spreads (illiquid)."""
+    
+    def __init__(self, max_spread_pct: float = 0.5):
+        self.max_spread_pct = max_spread_pct
+        
+    def filter(self, state: SystemState, universe: list[dict]) -> list[dict]:
+        filtered = []
+        for asset in universe:
+            bid = asset.get("bid", 0)
+            ask = asset.get("ask", 0)
+            if bid > 0 and ask > 0:
+                spread_pct = (ask - bid) / ask * 100
+                if spread_pct > self.max_spread_pct:
+                    continue
+            filtered.append(asset)
+        return filtered
+
+
 class VolatilityFilter(PairlistPlugin):
     """Filters out assets that are too stable or insanely volatile."""
     
-    def __init__(self, min_vol_pct: float = 1.0, max_vol_pct: float = 20.0):
+    def __init__(self, min_vol_pct: float = 1.0, max_vol_pct: float = 15.0):
         self.min_vol = min_vol_pct
         self.max_vol = max_vol_pct
         
@@ -73,26 +126,92 @@ class VolatilityFilter(PairlistPlugin):
             
             vol_pct = (high - low) / price * 100
             if self.min_vol <= vol_pct <= self.max_vol:
+                asset["_vol_pct"] = round(vol_pct, 2)
                 filtered.append(asset)
         return filtered
 
 
-class PerformanceFilter(PairlistPlugin):
-    """Scores remaining assets based on trend strength and historical edge."""
+class QualityScorer(PairlistPlugin):
+    """Multi-factor quality scoring — replaces the old naive price_change_pct scorer.
+    
+    Factors (weighted):
+        1. Volume Rank (25%) — higher 24h volume = higher score
+        2. Volatility Quality (20%) — moderate volatility scores best (4-8% sweet spot)
+        3. Momentum Quality (25%) — positive but not extreme trend strength
+        4. Persistence (15%) — assets that have been selected before get a bonus
+        5. Spread Tightness (15%) — tighter spread = better quality
+    
+    Final score is 0-100. Threshold should be ~55 to be meaningful.
+    """
     
     def filter(self, state: SystemState, universe: list[dict]) -> list[dict]:
+        if not universe:
+            return []
+        
+        # 1. Volume Rank Score (0-25)
+        volumes = [a.get("volume", 0) for a in universe]
+        max_vol = max(volumes) if volumes else 1
+        
         scored = []
         for asset in universe:
             sym = asset["symbol"]
-            trend_strength = asset.get("price_change_pct", 0)
             
-            # Persistence Modifier
+            # Persistence tracking
             if sym not in state.asset_memory:
                 state.asset_memory[sym] = AssetMemory(symbol=sym)
             mem = state.asset_memory[sym]
-
-            base_score = trend_strength + 50.0  # Normalize around 50
-            final_score = round(base_score + min(mem.cycles_selected * 2.0, 10.0), 2)
+            
+            # Factor 1: Volume rank (0-25)
+            vol = asset.get("volume", 0)
+            vol_score = (vol / max_vol) * 25.0 if max_vol > 0 else 0.0
+            
+            # Factor 2: Volatility quality (0-20) — sweet spot is 3-8%
+            vol_pct = asset.get("_vol_pct", 5.0)
+            if 3.0 <= vol_pct <= 8.0:
+                volatility_score = 20.0
+            elif 1.5 <= vol_pct < 3.0 or 8.0 < vol_pct <= 12.0:
+                volatility_score = 12.0
+            else:
+                volatility_score = 5.0
+            
+            # Factor 3: Momentum quality (0-25) — positive but not parabolic
+            trend_pct = asset.get("price_change_pct", 0)
+            if 0.5 <= trend_pct <= 5.0:
+                momentum_score = 25.0  # Healthy uptrend
+            elif 0.0 <= trend_pct < 0.5:
+                momentum_score = 15.0  # Flat-ish, could break either way
+            elif 5.0 < trend_pct <= 10.0:
+                momentum_score = 18.0  # Strong but risky
+            elif trend_pct > 10.0:
+                momentum_score = 8.0   # Parabolic — likely to dump
+            elif -3.0 <= trend_pct < 0.0:
+                momentum_score = 10.0  # Slight dip, potential bounce
+            else:
+                momentum_score = 3.0   # Crashing — avoid
+            
+            # Factor 4: Persistence (0-15)
+            persistence_score = min(mem.cycles_selected * 3.0, 15.0)
+            
+            # Factor 5: Spread quality (0-15)
+            bid = asset.get("bid", 0)
+            ask = asset.get("ask", 0)
+            if bid > 0 and ask > 0:
+                spread_pct = (ask - bid) / ask * 100
+                if spread_pct < 0.05:
+                    spread_score = 15.0
+                elif spread_pct < 0.1:
+                    spread_score = 12.0
+                elif spread_pct < 0.3:
+                    spread_score = 8.0
+                else:
+                    spread_score = 3.0
+            else:
+                spread_score = 8.0  # Unknown spread, neutral
+            
+            final_score = round(
+                vol_score + volatility_score + momentum_score +
+                persistence_score + spread_score, 2
+            )
             
             trend_str = (
                 "UP" if final_score > mem.last_score + 1
@@ -101,10 +220,17 @@ class PerformanceFilter(PairlistPlugin):
             )
             mem.score_trend = trend_str
             mem.last_score = final_score
-
+            
             scored.append({
                 "symbol": sym,
                 "score": final_score,
+                "score_breakdown": {
+                    "volume": round(vol_score, 1),
+                    "volatility": round(volatility_score, 1),
+                    "momentum": round(momentum_score, 1),
+                    "persistence": round(persistence_score, 1),
+                    "spread": round(spread_score, 1),
+                },
                 "trend": trend_str,
                 "persistence": f"{mem.cycles_selected} cycles",
                 "status": "EVALUATING",
@@ -120,8 +246,10 @@ class PairListManager:
     def __init__(self):
         self.plugins = [
             VolumePairList(limit=100),
+            MarketCapFilter(min_market_cap_proxy=50_000_000.0),
+            SpreadFilter(max_spread_pct=0.5),
             VolatilityFilter(min_vol_pct=0.5, max_vol_pct=15.0),
-            PerformanceFilter()
+            QualityScorer(),
         ]
         
     def generate_universe(self, state: SystemState, raw_data: list[dict]) -> list[dict]:

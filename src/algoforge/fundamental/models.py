@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 
 class SentimentLevel(str, Enum):
@@ -110,4 +111,5 @@ class FundamentalResult:
     screener: ScreenerResult | None = None
     macro: MacroResult | None = None
     selections: list[StockSelection] = field(default_factory=list)
+    llm_summary: Any | None = None
     timestamp: datetime = field(default_factory=datetime.now)

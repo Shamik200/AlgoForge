@@ -237,6 +237,7 @@ class Position(BaseModel):
     take_profit: float = Field(..., gt=0)
     strategy: str
     opened_at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)
     unrealized_pnl: float = 0.0
     current_price: float = 0.0
 

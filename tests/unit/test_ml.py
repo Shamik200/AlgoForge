@@ -170,3 +170,9 @@ def test_ml_pipeline_end_to_end():
     # Test prediction
     single_pred = pipeline.predict(features[0])
     assert -1.0 <= single_pred <= 1.0
+
+    # Test confidence-bearing prediction
+    scored_pred = pipeline.predict_with_confidence(features[0])
+    assert -1.0 <= scored_pred.ensemble_score <= 1.0
+    assert 0.0 <= scored_pred.confidence <= 1.0
+    assert scored_pred.direction in {"long", "short", "neutral"}

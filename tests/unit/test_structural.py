@@ -289,6 +289,124 @@ class TestTrendlineBuilder:
         lines = builder.build([], [], h, l, c)
         assert lines == []
 
+    def test_detect_trendlines_with_dataframe(self) -> None:
+        """Test detect_trendlines method with DataFrame input."""
+        import pandas as pd
+        
+        # Create sample data
+        h, l, c, v, ts = _make_uptrend(100)
+        bars = pd.DataFrame({
+            "high": h,
+            "low": l,
+            "close": c,
+            "volume": v,
+        }, index=pd.DatetimeIndex(ts))
+        
+        builder = TrendlineBuilder(touch_tolerance_pct=0.01, min_touches=3)
+        trendlines = builder.detect_trendlines("AAPL", bars, min_touches=3)
+        
+        # Verify trendlines have required fields
+        assert isinstance(trendlines, list)
+        for trendline in trendlines:
+            assert hasattr(trendline, "id")
+            assert trendline.symbol == "AAPL"
+            assert hasattr(trendline, "slope")
+            assert hasattr(trendline, "intercept")
+            assert hasattr(trendline, "touches")
+            assert trendline.touches >= 3
+            assert hasattr(trendline, "direction")
+            assert trendline.direction in ["support", "resistance"]
+            assert hasattr(trendline, "strength")
+            assert hasattr(trendline, "valid_from")
+            assert hasattr(trendline, "last_touch")
+            assert hasattr(trendline, "invalidated")
+            assert trendline.invalidated is False
+
+    def test_update_trendlines_with_new_bar(self) -> None:
+        """Test update_trendlines method with new bar."""
+        import pandas as pd
+        
+        # Create sample data and detect initial trendlines
+        h, l, c, v, ts = _make_uptrend(100)
+        bars = pd.DataFrame({
+            "high": h,
+            "low": l,
+            "close": c,
+            "volume": v,
+        }, index=pd.DatetimeIndex(ts))
+        
+        builder = TrendlineBuilder(touch_tolerance_pct=0.01, min_touches=2)
+        initial_trendlines = builder.detect_trendlines("AAPL", bars, min_touches=2)
+        
+        # Create a new bar
+        new_bar = OHLCV(
+            symbol="AAPL",
+            timeframe=Timeframe.M1,
+            timestamp=_ts(100),
+            open=110.0,
+            high=111.0,
+            low=109.0,
+            close=110.5,
+            volume=1000.0,
+        )
+        
+        # Update trendlines
+        updated_trendlines = builder.update_trendlines("AAPL", new_bar)
+        
+        # Verify update worked
+        assert isinstance(updated_trendlines, list)
+        # Should have same or fewer trendlines (some may be invalidated)
+        assert len(updated_trendlines) <= len(initial_trendlines)
+
+    def test_check_proximity_within_threshold(self) -> None:
+        """Test check_proximity returns True when price is near trendline."""
+        import pandas as pd
+        
+        # Create sample data and detect trendlines
+        h, l, c, v, ts = _make_uptrend(100)
+        bars = pd.DataFrame({
+            "high": h,
+            "low": l,
+            "close": c,
+            "volume": v,
+        }, index=pd.DatetimeIndex(ts))
+        
+        builder = TrendlineBuilder(touch_tolerance_pct=0.01, min_touches=2)
+        trendlines = builder.detect_trendlines("AAPL", bars, min_touches=2)
+        
+        if trendlines:
+            trendline = trendlines[0]
+            # Calculate line price at current index
+            current_index = trendline.touch_points[-1].index + 1
+            line_price = trendline.price_at(current_index)
+            
+            # Test price very close to line (within 0.5 ATR)
+            atr = 2.0
+            close_price = line_price + 0.3 * atr  # Within 0.5 ATR
+            assert builder.check_proximity(close_price, trendline, atr, threshold=0.5) is True
+            
+            # Test price far from line (beyond 0.5 ATR)
+            far_price = line_price + 1.0 * atr  # Beyond 0.5 ATR
+            assert builder.check_proximity(far_price, trendline, atr, threshold=0.5) is False
+
+    def test_detect_trendlines_insufficient_bars(self) -> None:
+        """Test detect_trendlines with insufficient bars."""
+        import pandas as pd
+        
+        # Create very small dataset
+        bars = pd.DataFrame({
+            "high": [100.0, 101.0],
+            "low": [99.0, 100.0],
+            "close": [100.5, 100.8],
+            "volume": [1000.0, 1100.0],
+        })
+        
+        builder = TrendlineBuilder()
+        trendlines = builder.detect_trendlines("AAPL", bars, min_touches=3)
+        
+        # Should return empty list
+        assert trendlines == []
+
 
 # ---------------------------------------------------------------------------
 # Trend Analyzer tests

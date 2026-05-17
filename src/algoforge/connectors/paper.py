@@ -48,9 +48,18 @@ class PaperConnector(ConnectorBase):
         signal: Signal,
         daily_volume: float | None = None,
         conviction: float = 1.0,
+        conviction_score: float | None = None,
         order_book: dict | None = None,
+        score_weight: float = 1.0,
     ) -> FillResult:
-        return self._engine.submit_signal(signal, daily_volume, conviction, order_book)
+        return self._engine.submit_signal(
+            signal,
+            daily_volume=daily_volume,
+            conviction=conviction,
+            conviction_score=conviction_score,
+            order_book=order_book,
+            score_weight=score_weight,
+        )
 
     def update_prices(self, prices: dict[str, float]) -> None:
         self._engine.update_prices(prices)

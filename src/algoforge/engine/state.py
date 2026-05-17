@@ -44,9 +44,9 @@ class DiscoveryConfig(BaseModel):
     """Configuration for dynamic asset universe discovery."""
     market: str = "crypto"
     universe_size: int = 75
-    dynamic_threshold: float = 45.0
+    dynamic_threshold: float = 55.0  # Raised: new multi-factor scorer uses 0-100 range
     min_liquidity: float = 500_000.0
-    max_active_assets: int = 10  # max concurrent WebSocket streams
+    max_active_assets: int = 8  # max concurrent WebSocket streams
 
 
 # ---------------------------------------------------------
@@ -68,15 +68,16 @@ class SystemState:
         # IMPORTANT: All pct fields use FRACTIONAL notation (0.015 = 1.5%, 0.15 = 15%)
         self.risk_config = RiskConfig(
             max_risk_per_trade_pct=0.015,        # 1.5% risk per trade
+            max_position_size_pct=0.05,          # 5% max per position (was 10%)
             max_drawdown_pct=0.15,               # 15% max drawdown kill switch
             max_daily_loss_pct=0.05,             # 5% daily loss limit
             max_weekly_loss_pct=0.10,            # 10% weekly loss limit
             max_correlation=0.85,                # crypto pairs are highly correlated
             min_risk_reward=1.2,                 # aligned with strategy min_rr=1.2
-            max_open_positions=10,
+            max_open_positions=8,                 # reduced from 10 to limit total exposure
             max_consecutive_losses=8,            # less aggressive cooldown trigger
             cooldown_bars=15,                    # 15 bars (~15min) not 1 hour
-            max_directional_exposure_pct=0.85,   # crypto trends — allow directional bias
+            max_directional_exposure_pct=0.60,   # tightened from 0.85 to cap net exposure
         )
         self.indicator_engine = IndicatorEngine()
         self.structural_engine = StructuralEngine()

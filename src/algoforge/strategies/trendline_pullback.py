@@ -44,7 +44,7 @@ class TrendlinePullback(Strategy):
 
     def __init__(
         self,
-        atr_touch_multiplier: float = 2.0,
+        atr_touch_multiplier: float = 0.5,
         atr_sl_multiplier: float = 1.5,
         min_adx: float = 15.0,
         min_rr_ratio: float = 1.5,

@@ -19,6 +19,9 @@ import structlog
 
 from algoforge.core.constants import Timeframe
 from algoforge.core.models import OHLCV, OHLCVSeries
+from algoforge.core.error_recovery import ErrorRecoveryManager
+from algoforge.core.pairs_coordinator import PairTradingCoordinator
+from algoforge.core.timeframe_coordinator import TimeframeCoordinator
 from algoforge.engine.state import SystemState, log_msg
 from algoforge.regime.models import RegimeProbabilities
 from algoforge.signals.models import SignalResult
@@ -36,6 +39,9 @@ _mean_reversion_signal = MeanReversionSignal(vwap_period=20)
 _breakout_signal = VolatilityBreakoutSignal(period=20, min_squeeze_duration=3)
 _structural_signal = StructuralConfluenceSignal(atr_period=14, vol_sma_period=20)
 _microstructure_family = MicrostructureFamily(timeframe="1m", deviation_threshold=1.5)
+_timeframe_coordinator = TimeframeCoordinator()
+_pairs_coordinator = PairTradingCoordinator()
+_error_recovery = ErrorRecoveryManager()
 
 
 async def handle_live_tick(
@@ -128,8 +134,32 @@ async def handle_live_tick(
 
             # ── STEP 4: SIGNAL FAMILIES (Phase 6 — was dead code!) ─────
             signal_family_results = _compute_signal_families(
-                series, indicators, structure, regime_result
+                series, indicators, structure, regime_result,
+                order_book=state.live_books.get(sym),
             )
+
+            # ── STEP 4.5: MULTI-TIMEFRAME + PAIRS COORDINATION ────────
+            htf_context = _timeframe_coordinator.build_context(
+                sym,
+                series,
+                state.indicator_engine,
+                state.structural_engine,
+                state.regime_classifier,
+            )
+
+            if htf_context:
+                state.asset_confidence[sym] = round(
+                    max(state.asset_confidence.get(sym, 0.0), htf_context.htf_regime.confidence),
+                    3,
+                )
+
+            pairs_context = _pairs_coordinator.build_signal(
+                sym,
+                state.selected_assets,
+                state.kline_buffers,
+            )
+            if pairs_context is not None:
+                signal_family_results.append(pairs_context.signal)
 
             # Log signal family activity
             active_families = [s.family_name for s in signal_family_results if s.is_valid]
@@ -152,6 +182,17 @@ async def handle_live_tick(
 
             # ── STEP 8: ORCHESTRATOR — evaluate strategies & execute ─
             rsi_res = indicators.get("rsi")
+            
+            # Compute score_weight from universe scoring (0.0-1.0)
+            # Higher-quality assets get proportionally larger positions
+            asset_score = 50.0  # default neutral
+            for scored in state.scored_assets:
+                if scored.get("symbol") == sym:
+                    asset_score = scored.get("score", 50.0)
+                    break
+            # Normalize to 0.0-1.0 range (scores are 0-100)
+            score_weight = min(1.0, max(0.0, asset_score / 100.0))
+            
             fills = state.orchestrator.process_bar(
                 symbol=sym,
                 timeframe=Timeframe.M1,
@@ -166,14 +207,27 @@ async def handle_live_tick(
                 current_bar=series.count,
                 ml_features=ml_features if state._ml_trained else None,
                 signal_family_results=signal_family_results,
+                htf_structure=htf_context.htf_structure if htf_context else None,
+                htf_regime=htf_context.htf_regime.primary_regime if htf_context else None,
                 order_book=state.live_books.get(sym),
+                score_weight=score_weight,
             )
 
             # Log fills
             await _log_fills(state, sym, fills, broadcast_fn)
 
         except Exception as e:
-            logger.error(f"Pipeline error for {sym}: {e}")
+            decision = _error_recovery.handle_exception(
+                e,
+                stage="live_tick_pipeline",
+                context={"symbol": sym},
+            )
+            logger.error(
+                "Pipeline error for %s: %s | recovery=%s",
+                sym,
+                e,
+                decision.fallback_message,
+            )
             import traceback
             logger.debug(traceback.format_exc())
 
@@ -190,6 +244,7 @@ def _compute_signal_families(
     indicators: dict,
     structure,
     regime_result,
+    order_book: dict | None = None,
 ) -> list[SignalResult]:
     """Compute all 5 signal family outputs for the CombinationEngine.
 
@@ -203,6 +258,11 @@ def _compute_signal_families(
         3. Breakout — volatility squeeze + Donchian breakout
         4. Structural — S/R level rejection + microstructure
         5. Microstructure — VWAP deviation + volume imbalance + OBV
+        
+    Pattern Recognition Integration (Requirement 3.2, 3.4, 3.5):
+        - Detects candlestick patterns on every bar
+        - Boosts conviction by 20% when pattern forms at S/R level
+        - Reduces conviction by 30% when reversal pattern conflicts with signal
     """
     results: list[SignalResult] = []
 
@@ -221,6 +281,52 @@ def _compute_signal_families(
 
     # Build RegimeProbabilities for signal family consumption
     regime_probs = _build_regime_probs(regime_result)
+    
+    # ── PATTERN RECOGNITION (Requirement 3.2, 3.4, 3.5) ──────────────────
+    # Invoke PatternRecognizer on every bar to detect candlestick patterns
+    detected_patterns = []
+    try:
+        from algoforge.structural.pattern_recognizer import PatternRecognizer
+        
+        pattern_recognizer = PatternRecognizer()
+        
+        # Extract OHLC arrays for pattern recognition
+        opens = np.array([c.open for c in series.candles], dtype=np.float64)
+        highs = np.array([c.high for c in series.candles], dtype=np.float64)
+        lows = np.array([c.low for c in series.candles], dtype=np.float64)
+        closes = np.array([c.close for c in series.candles], dtype=np.float64)
+        
+        # Recognize patterns in recent bars
+        detected_patterns = pattern_recognizer.recognize_patterns(
+            opens=opens,
+            highs=highs,
+            lows=lows,
+            closes=closes,
+            lookback=5,
+        )
+        
+        # Check if patterns are at S/R levels (high-confluence zones)
+        if detected_patterns and structure and hasattr(structure, 'support_resistance_levels'):
+            current_price = closes[-1]
+            sr_levels = structure.support_resistance_levels
+            
+            # Check proximity to S/R levels (within 0.5% tolerance)
+            for pattern in detected_patterns:
+                for level in sr_levels:
+                    level_price = level.price if hasattr(level, 'price') else level
+                    if abs(current_price - level_price) / level_price < 0.005:
+                        pattern.at_sr_level = True
+                        pattern.confluence_boost = 0.2  # 20% boost
+                        break
+        
+        if detected_patterns:
+            logger.debug(
+                "patterns_detected",
+                count=len(detected_patterns),
+                patterns=[p.pattern_type for p in detected_patterns],
+            )
+    except Exception as e:
+        logger.warning("pattern_recognition_error", error=str(e))
 
     # 1. MOMENTUM SIGNAL
     try:
@@ -266,6 +372,7 @@ def _compute_signal_families(
             bb_upper=bb_upper_arr,
             bb_lower=bb_lower_arr,
             regime_probs=regime_probs,
+            structural_snapshot=structure,
         )
         results.append(brk_result)
     except Exception as e:
@@ -282,6 +389,7 @@ def _compute_signal_families(
             series=series,
             snapshot=structure,
             regime_probs=regime_probs,
+            indicators=indicators,
         )
         results.append(struct_result)
     except Exception as e:
@@ -300,6 +408,7 @@ def _compute_signal_families(
             low=latest.low,
             close=latest.close,
             volume=latest.volume,
+            order_book=order_book,
         )
         results.append(micro_result)
     except Exception as e:
@@ -309,6 +418,68 @@ def _compute_signal_families(
             direction="neutral", is_valid=False,
             metadata={"error": str(e)}
         ))
+    
+    # ── PATTERN-BASED CONVICTION ADJUSTMENTS (Requirement 3.2, 3.4, 3.5) ──
+    # Apply pattern recognition as a confirmation filter
+    if detected_patterns:
+        for signal in results:
+            if not signal.is_valid:
+                continue
+            
+            # Determine signal direction for pattern matching
+            signal_direction = signal.direction
+            if isinstance(signal_direction, str):
+                signal_direction_str = signal_direction
+            else:
+                signal_direction_str = signal_direction.value if hasattr(signal_direction, 'value') else str(signal_direction)
+            
+            original_score = signal.score
+            adjustment_applied = False
+            adjustment_reason = []
+            
+            for pattern in detected_patterns:
+                pattern_dir = pattern.direction.value if hasattr(pattern.direction, 'value') else pattern.direction
+                
+                # Requirement 3.2: Boost conviction by 20% when pattern forms at S/R level
+                if pattern.at_sr_level and pattern_dir != "neutral":
+                    # Check if pattern direction aligns with signal
+                    if (signal_direction_str == "long" and pattern_dir == "bullish") or \
+                       (signal_direction_str == "short" and pattern_dir == "bearish"):
+                        signal.score = signal.score * 1.20  # 20% boost
+                        adjustment_applied = True
+                        adjustment_reason.append(f"pattern_at_sr_boost:{pattern.pattern_type}")
+                        logger.debug(
+                            "pattern_conviction_boost",
+                            family=signal.family_name,
+                            pattern=pattern.pattern_type,
+                            original_score=round(original_score, 3),
+                            adjusted_score=round(signal.score, 3),
+                        )
+                
+                # Requirement 3.4: Reduce conviction by 30% when reversal pattern conflicts
+                # Reversal patterns: engulfing, hammer, shooting_star, morning_star, evening_star
+                reversal_patterns = ["engulfing", "hammer", "shooting_star", "morning_star", "evening_star", "piercing", "dark_cloud"]
+                if pattern.pattern_type in reversal_patterns:
+                    # Check if pattern direction conflicts with signal
+                    if (signal_direction_str == "long" and pattern_dir == "bearish") or \
+                       (signal_direction_str == "short" and pattern_dir == "bullish"):
+                        signal.score = signal.score * 0.70  # 30% reduction
+                        adjustment_applied = True
+                        adjustment_reason.append(f"reversal_conflict:{pattern.pattern_type}")
+                        logger.debug(
+                            "pattern_conviction_reduction",
+                            family=signal.family_name,
+                            pattern=pattern.pattern_type,
+                            original_score=round(original_score, 3),
+                            adjusted_score=round(signal.score, 3),
+                        )
+            
+            # Add pattern adjustment metadata to signal
+            if adjustment_applied:
+                if not hasattr(signal, 'metadata') or signal.metadata is None:
+                    signal.metadata = {}
+                signal.metadata['pattern_adjustments'] = adjustment_reason
+                signal.metadata['original_score'] = original_score
 
     return results
 
@@ -457,7 +628,7 @@ def _log_decision(
     regime_result,
 ) -> None:
     """Log why the system is trading or skipping this bar."""
-    engine = state.orchestrator._paper
+    engine = state.orchestrator.connector
     open_syms = [p.symbol for p in engine.open_positions]
     snap = engine.snapshot()
     regime_name = regime_result.primary_regime.value
@@ -510,7 +681,7 @@ async def _log_fills(
     broadcast_fn,
 ) -> None:
     """Log trade fills and vetoes."""
-    engine = state.orchestrator._paper
+    engine = state.orchestrator.connector
     regime_name = state.asset_regimes.get(sym, "unknown")
 
     traded = False
@@ -522,12 +693,13 @@ async def _log_fills(
             tp_str = f"${pos.take_profit:.4f}" if pos else "n/a"
             dir_str = pos.direction.value.upper() if pos else "?"
             qty_str = f"{pos.quantity:.4f}" if pos else "?"
+            value_str = f"${pos.entry_price * pos.quantity:,.2f}" if pos else "$?"
             ml_tag = f" ML={'ON' if state._ml_trained else 'OFF'}"
             log_msg(
                 state,
                 f"[TRADE] [{sym}] {dir_str} "
                 f"@ ${fill.fill_price:.4f} | SL={sl_str} TP={tp_str} "
-                f"qty={qty_str} slip=${fill.slippage:.4f}{ml_tag}"
+                f"qty={qty_str} value={value_str} slip=${fill.slippage:.4f}{ml_tag}"
             )
             await broadcast_fn()
         else:

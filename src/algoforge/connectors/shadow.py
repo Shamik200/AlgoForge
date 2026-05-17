@@ -10,7 +10,8 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 
 from algoforge.connectors.base import ConnectorBase
-from algoforge.core.models import Order, Signal, PortfolioSnapshot
+from algoforge.core.models import Signal, PortfolioSnapshot
+from algoforge.oms.models import Order
 from algoforge.execution.paper import FillResult
 from algoforge.execution.reconciliation import ReconciliationEngine
 
@@ -36,6 +37,7 @@ class ShadowConnector(ConnectorBase):
         daily_volume: float | None = None,
         conviction: float = 1.0,
         order_book: dict | None = None,
+        score_weight: float = 1.0,
     ) -> FillResult:
         """Submit to both live and paper engines, and reconcile the fills."""
         
@@ -45,6 +47,7 @@ class ShadowConnector(ConnectorBase):
             daily_volume=daily_volume,
             conviction=conviction,
             order_book=order_book,
+            score_weight=score_weight,
         )
         
         # 2. Capital Scaling Logic for Live Order
@@ -52,12 +55,12 @@ class ShadowConnector(ConnectorBase):
         scaled_signal = self._scale_signal(signal, scale)
         
         # 3. Submit Live Order (Scaled size)
-        # Note: If live connector is mocked, this acts as a placeholder.
         live_fill = self.live.submit_order(
             signal=scaled_signal,
             daily_volume=daily_volume,
-            conviction=conviction, # Keep conviction same
+            conviction=conviction,
             order_book=order_book,
+            score_weight=score_weight,
         )
         
         # 4. Reconcile Phase (Only if both filled/partially filled)

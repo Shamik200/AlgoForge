@@ -25,64 +25,10 @@ from algoforge.fundamental.models import (
 logger = logging.getLogger(__name__)
 
 
-# --- Pydantic Schemas for Structured LLM Output ---
+from algoforge.llm.client import FinLLMClient
+from algoforge.llm.schemas import AnalystOpinion, ConsensusOutput
 
-class AnalystOpinion(BaseModel):
-    """Structured output from a single specialist analyst."""
-    persona: str = Field(description="The persona evaluating (Value, Growth, Momentum, Sentiment)")
-    score: float = Field(ge=-1.0, le=1.0, description="Directional conviction score from -1.0 (bearish) to 1.0 (bullish)")
-    confidence: float = Field(ge=0.0, le=1.0, description="Confidence in this evaluation")
-    reasoning: list[str] = Field(description="Bullet points of core reasoning")
-    flags: list[str] = Field(description="Any critical warning flags to alert the consensus layer")
-
-
-class ConsensusOutput(BaseModel):
-    """Final output from the consensus lead analyst."""
-    symbol: str
-    composite_score: float = Field(ge=-1.0, le=1.0)
-    decision: str = Field(description="BUY, HOLD, or SELL")
-    allocation_weight: float = Field(ge=0.0, le=1.0)
-    consensus_summary: str = Field(description="One paragraph summarizing the multi-agent consensus")
-
-
-# --- Mock LLM Client (Replace with real OpenAI/Anthropic client in production) ---
-
-class MockLLMClient:
-    """Mock LLM that returns deterministic Pydantic objects based on inputs."""
-    
-    def analyze(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
-        # Dummy implementations that respond to metrics
-        if "Value Analyst" in prompt:
-            score = 0.5 if "pe_ratio" in prompt and "10" in prompt else 0.0
-            return AnalystOpinion(
-                persona="Value", score=score, confidence=0.8,
-                reasoning=["PE is attractive", "FCF yield is strong"], flags=[]
-            )
-        elif "Growth Analyst" in prompt:
-            score = 0.6 if "revenue_growth" in prompt else 0.1
-            return AnalystOpinion(
-                persona="Growth", score=score, confidence=0.7,
-                reasoning=["Revenue growth > 20%", "Margin expansion visible"], flags=[]
-            )
-        elif "Momentum" in prompt:
-            return AnalystOpinion(
-                persona="Momentum", score=0.4, confidence=0.9,
-                reasoning=["Strong relative strength", "Breakout confirmed"], flags=["Overbought RSI"]
-            )
-        elif "Sentiment Analyst" in prompt:
-            return AnalystOpinion(
-                persona="Sentiment", score=0.2, confidence=0.6,
-                reasoning=["News flow is slightly positive", "No major scandals"], flags=[]
-            )
-        elif "Consensus" in prompt:
-            return ConsensusOutput(
-                symbol="UNKNOWN", composite_score=0.45, decision="BUY",
-                allocation_weight=0.5, consensus_summary="All analysts lean positive."
-            )
-        
-        if schema == ConsensusOutput:
-            return ConsensusOutput(symbol="UNKNOWN", composite_score=0.0, decision="HOLD", allocation_weight=0.0, consensus_summary="")
-        return AnalystOpinion(persona="Unknown", score=0.0, confidence=0.0, reasoning=[], flags=[])
+logger = logging.getLogger(__name__)
 
 
 # --- Analyst Personas ---
@@ -90,7 +36,7 @@ class MockLLMClient:
 class BaseAnalystAgent:
     """Base class for LLM-powered fundamental analysts."""
     def __init__(self, llm_client=None, historical_accuracy: float = 1.0):
-        self.llm = llm_client or MockLLMClient()
+        self.llm = llm_client or FinLLMClient()
         self.historical_accuracy = historical_accuracy
         
     def evaluate(self, symbol: str, data: dict[str, Any]) -> AnalystOpinion:
@@ -128,7 +74,7 @@ class AnalystConsensusAgent:
     """Lead Analyst that aggregates persona opinions into a final portfolio decision."""
     
     def __init__(self, llm_client=None):
-        self.llm = llm_client or MockLLMClient()
+        self.llm = llm_client or FinLLMClient()
         
     def run(self, symbol: str, opinions: list[AnalystOpinion]) -> StockSelection:
         """Score consensus from multiple agents weighted by their historical accuracy."""

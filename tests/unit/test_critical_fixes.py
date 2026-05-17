@@ -258,6 +258,37 @@ class TestKellyCriterion:
         assert result.position_size > 0
 
 
+class TestPaperTradeMetadata:
+    def test_signal_metadata_persists_into_trade(self) -> None:
+        engine = PaperTradingEngine(initial_capital=100_000)
+        sig = Signal(
+            symbol="TEST",
+            direction=Direction.LONG,
+            strategy="test",
+            confidence=0.7,
+            entry_price=100,
+            stop_loss=95,
+            take_profit=110,
+            timeframe=Timeframe.D1,
+            regime=MarketRegime.TRENDING,
+            metadata={
+                "signal_family": "momentum",
+                "conviction_score": 0.82,
+                "ml_confidence": 0.76,
+            },
+        )
+
+        fill = engine.submit_signal(sig)
+        assert fill.filled is True
+
+        engine.update_prices({"TEST": 110.0})
+        trades = engine.check_exits(current_bar=1)
+        assert len(trades) == 1
+        assert trades[0].metadata["signal_family"] == "momentum"
+        assert trades[0].metadata["conviction_score"] == 0.82
+        assert trades[0].metadata["ml_confidence"] == 0.76
+
+
 class TestCircuitBreaker:
     """Test market circuit breaker (RISK-19)."""
 

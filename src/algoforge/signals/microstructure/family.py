@@ -69,6 +69,7 @@ class MicrostructureFamily:
         low: float,
         close: float,
         volume: float,
+        order_book: dict | None = None,
     ) -> SignalResult:
         """Generate a microstructure signal from the current candle.
 
@@ -112,6 +113,25 @@ class MicrostructureFamily:
         # Volume imbalance confirms direction (30%).
         # OBV divergence is the confirmation layer (20%).
         composite = (vwap_score * 0.50) + (imbalance_score * 0.30) + (obv_score * 0.20)
+        metadata: dict[str, str | float | bool] = {
+            "vwap_score": round(vwap_score, 4),
+            "imbalance_score": round(imbalance_score, 4),
+            "obv_score": round(obv_score, 4),
+            "current_vwap": round(self.vwap_tracker.current_vwap, 4),
+            "mode": "L2" if (self.has_l2_data or order_book) else "L1",
+        }
+
+        if order_book and "bid" in order_book and "ask" in order_book and order_book["ask"] > order_book["bid"] > 0:
+            bid_qty = float(order_book.get("bid_qty", 0.0))
+            ask_qty = float(order_book.get("ask_qty", 0.0))
+            book_total = bid_qty + ask_qty
+            book_imbalance = (bid_qty - ask_qty) / book_total if book_total > 0 else 0.0
+            spread = (float(order_book["ask"]) - float(order_book["bid"])) / float(order_book["ask"])
+            l2_score = max(-1.0, min(1.0, book_imbalance - spread))
+            composite = (0.65 * composite) + (0.35 * l2_score)
+            metadata["book_imbalance"] = round(book_imbalance, 4)
+            metadata["bid_ask_spread_pct"] = round(spread, 6)
+            metadata["mode"] = "L2"
         composite = max(-1.0, min(1.0, composite))
 
         # Determine direction
@@ -126,11 +146,5 @@ class MicrostructureFamily:
             score=composite,
             direction=direction,
             is_valid=True,
-            metadata={
-                "vwap_score": str(round(vwap_score, 4)),
-                "imbalance_score": str(round(imbalance_score, 4)),
-                "obv_score": str(round(obv_score, 4)),
-                "current_vwap": str(round(self.vwap_tracker.current_vwap, 4)),
-                "mode": "L2" if self.has_l2_data else "L1",
-            },
+            metadata=metadata,
         )

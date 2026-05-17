@@ -10,6 +10,7 @@ import numpy as np
 from algoforge.ml.ensemble import StackingEnsemble
 from algoforge.ml.features import FeatureBuilder
 from algoforge.ml.labels import generate_labels
+from algoforge.ml.orchestrator import MLPrediction
 from algoforge.ml.validation import purged_walk_forward_split
 
 logger = logging.getLogger(__name__)
@@ -198,3 +199,47 @@ class MLPipeline:
 
         signals = self.ensemble.predict(features)
         return float(signals[0])
+
+    def predict_with_confidence(self, features: np.ndarray) -> MLPrediction:
+        """Generate a prediction object with confidence metadata.
+
+        This keeps the legacy ensemble pipeline usable by the conviction layer
+        without requiring a separate ML orchestrator instance.
+        """
+        if features.ndim == 1:
+            features = features.reshape(1, -1)
+
+        ensemble_score = float(self.ensemble.predict(features)[0])
+        xgboost_score = ensemble_score
+        direction = self._score_to_direction(ensemble_score)
+        probability = self._score_to_probability(ensemble_score)
+
+        confidence = abs(ensemble_score)
+        if abs(xgboost_score - ensemble_score) < 0.3:
+            confidence *= 1.1
+        else:
+            confidence *= 0.9
+
+        confidence = float(np.clip(confidence, 0.0, 1.0))
+
+        return MLPrediction(
+            direction=direction,
+            probability=probability,
+            confidence=confidence,
+            xgboost_score=xgboost_score,
+            lstm_forecast=[],
+            ensemble_score=ensemble_score,
+            feature_importance={},
+        )
+
+    @staticmethod
+    def _score_to_direction(score: float) -> str:
+        if score > 0.1:
+            return "long"
+        if score < -0.1:
+            return "short"
+        return "neutral"
+
+    @staticmethod
+    def _score_to_probability(score: float) -> float:
+        return float(1.0 / (1.0 + np.exp(-3.0 * score)))

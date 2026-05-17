@@ -34,8 +34,8 @@ class RiskConfig(BaseModel):
     # Per-trade limits
     max_risk_per_trade_pct: float = Field(default=0.02, ge=0.001, le=0.10,
         description="Max 1-2% of capital risked per trade (0.02 = 2%)")
-    max_position_size_pct: float = Field(default=0.10, ge=0.01, le=0.50,
-        description="Max 5-10% of capital per position (0.10 = 10%)")
+    max_position_size_pct: float = Field(default=0.05, ge=0.01, le=0.50,
+        description="Max 5% of capital per position (0.05 = 5%)")
     min_risk_reward: float = Field(default=1.5, ge=0.5, le=10.0,
         description="Minimum R:R ratio")
 
@@ -194,15 +194,39 @@ class RiskManager:
         current_bar: int = 0,
         current_prices: dict[str, float] | None = None,
         conviction: float = 1.0,
+        score_weight: float = 1.0,
+        conviction_score: float | None = None,
     ) -> RiskCheckResult:
         """Validate a signal against all risk rules.
 
         This is the primary entry point. Returns approved=True only if
         ALL checks pass. Any single failure → veto.
+        
+        Args:
+            signal: The trading signal to validate
+            open_positions: List of currently open positions
+            daily_volume: Daily trading volume for liquidity check
+            current_bar: Current bar index for cooldown tracking
+            current_prices: Current market prices for circuit breaker
+            conviction: Legacy conviction parameter (0-1)
+            score_weight: Quality score weight for position sizing
+            conviction_score: Composite conviction from ConfidenceAggregator (0-1)
+                If provided, this overrides the legacy conviction parameter and
+                applies confidence-based position sizing per Requirement 7.
         """
         self._current_bar = current_bar
         positions = open_positions or []
         reasons: list[str] = []
+        
+        # Requirement 7.2: Skip trades when conviction < 0.3
+        # Use conviction_score if provided (from ConfidenceAggregator), else fall back to conviction
+        effective_conviction = conviction_score if conviction_score is not None else conviction
+        
+        if effective_conviction < 0.3:
+            reasons.append(
+                f"CONVICTION_TOO_LOW: Conviction score {effective_conviction:.3f} < 0.3 threshold"
+            )
+            return self._reject(reasons)
 
         # RISK-19: Auto-check circuit breaker if prices provided
         if current_prices and not self._circuit_breaker_active:
@@ -336,14 +360,45 @@ class RiskManager:
         if reasons:
             return self._reject(reasons)
 
+        # --- NEW LLM LAYER: Risk Commentary ---
+        try:
+            from algoforge.llm.client import FinLLMClient
+            from algoforge.llm.prompts import PromptBuilder
+            from algoforge.llm.schemas import RiskCommentary
+            llm = FinLLMClient()
+            portfolio_state = {
+                "capital": self._capital,
+                "open_positions": len(positions),
+                "drawdown": self.current_drawdown_pct,
+                "consecutive_losses": self._consecutive_losses,
+                "turbulence": self._current_turbulence
+            }
+            prompt = PromptBuilder.build_risk_prompt(portfolio_state, signal)
+            risk_review = llm.analyze(prompt, RiskCommentary)
+            
+            if risk_review.sizing_multiplier == 0.0:
+                reasons.append(f"LLM_RISK_VETO: {risk_review.risk_notes}")
+                return self._reject(reasons)
+                
+            # Multiply incoming conviction by LLM sizing multiplier
+            conviction *= risk_review.sizing_multiplier
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("LLM Risk Assistant failed: %s", e)
+
         # --- All checks passed — calculate position size ---
-        position_size = self._calculate_position_size(signal, conviction)
+        # Use conviction_score for position sizing if provided (Requirement 7)
+        final_conviction = conviction_score if conviction_score is not None else conviction
+        position_size = self._calculate_position_size(signal, final_conviction)
         risk_amount = self._calculate_risk_amount(signal, position_size)
         position_value = position_size * signal.entry_price
 
-        # RISK-02: Max position size check
-        if position_value > self._capital * self._config.max_position_size_pct:
-            position_size = (self._capital * self._config.max_position_size_pct) / signal.entry_price
+        # RISK-02: Max position size check — SCALED BY QUALITY SCORE
+        # score_weight is 0.0-1.0 based on universe quality score.
+        # A 90-score asset gets full allocation; a 55-score asset gets ~60%.
+        effective_max_pct = self._config.max_position_size_pct * max(0.3, score_weight)
+        if position_value > self._capital * effective_max_pct:
+            position_size = (self._capital * effective_max_pct) / signal.entry_price
             position_value = position_size * signal.entry_price
             risk_amount = self._calculate_risk_amount(signal, position_size)
 
@@ -382,23 +437,33 @@ class RiskManager:
         Kelly: Uses Kelly Criterion with fractional scaling (SIZE-01)
 
         Dynamic adjustment: reduces size during drawdown (audit fix).
-        Conviction scaling: scales size linearly with signal conviction (audit fix).
+        Conviction scaling: implements confidence-based position sizing per Requirement 7:
+        - conviction < 0.3: skip (handled in validate_signal)
+        - 0.3 ≤ conviction < 0.6: allocate 50% position (half_position)
+        - conviction ≥ 0.6: allocate 100% position (full_position)
         """
         risk_per_share = abs(signal.entry_price - signal.stop_loss)
         if risk_per_share == 0:
             return 0.0
 
+        # Requirement 7.3, 7.4: Apply conviction-based position sizing thresholds
+        conviction_multiplier = 1.0
+        if conviction < 0.6:
+            # Half position for medium conviction [0.3, 0.6)
+            conviction_multiplier = 0.5
+        # else: Full position for high conviction >= 0.6
+
         if self._config.sizing_method == "kelly" and len(self._trade_results) >= 20:
             kelly_size = self._kelly_position_size(signal, risk_per_share)
             if kelly_size > 0:
                 base_size = self._apply_dynamic_scaling(kelly_size)
-                return base_size * conviction
+                return base_size * conviction_multiplier
 
         # Default: fixed risk-per-trade method
         max_risk_amount = self._capital * self._config.max_risk_per_trade_pct
         position_size = max_risk_amount / risk_per_share
         base_size = self._apply_dynamic_scaling(position_size)
-        return base_size * conviction
+        return base_size * conviction_multiplier
 
     def _apply_dynamic_scaling(self, base_size: float) -> float:
         """Reduce position size during drawdown (RISK-15: dynamic adjustment).

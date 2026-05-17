@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
+import uuid
 
 from pydantic import BaseModel, Field
 
@@ -76,12 +77,19 @@ class Trendline(BaseModel):
     Ranked by touch count and recency.
     """
 
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique trendline identifier")
+    symbol: str = Field(default="", description="Symbol this trendline belongs to")
     slope: float = Field(..., description="Slope (price change per bar)")
     intercept: float = Field(..., description="Y-intercept (price at index 0)")
     touch_points: list[SwingPoint] = Field(default_factory=list, min_length=2)
+    touches: int = Field(default=2, ge=2, description="Number of touches on this trendline")
     is_upper: bool = Field(..., description="True = resistance line (connects highs)")
+    direction: str = Field(default="", description="'support' or 'resistance'")
     strength: float = Field(default=0.0, ge=0, description="Line strength score")
     broken: bool = Field(default=False, description="True if line has been broken")
+    invalidated: bool = Field(default=False, description="True if trendline is no longer valid")
+    valid_from: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When trendline became valid")
+    last_touch: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Last time price touched this line")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property

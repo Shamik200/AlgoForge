@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from algoforge.core.models import Order
+from algoforge.oms.models import Order
 
 logger = logging.getLogger(__name__)
 

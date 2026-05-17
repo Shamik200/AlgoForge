@@ -10,6 +10,7 @@ from algoforge.dashboard.models import (
     SystemState,
     SystemStatus,
 )
+from algoforge.dashboard.backend import DashboardBackend
 from algoforge.dashboard.server import DashboardServer
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     "SignalHealthView",
     "SystemState",
     "SystemStatus",
+    "DashboardBackend",
     "DashboardServer",
 ]

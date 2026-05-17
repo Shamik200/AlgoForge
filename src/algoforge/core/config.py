@@ -136,6 +136,7 @@ class RiskConfig(BaseModel):
     min_risk_reward_ratio: float = Field(default=2.0, gt=0)
     max_open_positions: int = Field(default=5, gt=0)
     max_daily_loss_pct: float = Field(default=5.0, gt=0, le=100)
+    max_weekly_loss_pct: float = Field(default=10.0, gt=0, le=100)
     max_drawdown_pct: float = Field(default=20.0, gt=0, le=100)
     mandatory_stop_loss: bool = True  # NEVER set to False
 
