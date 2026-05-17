@@ -51,6 +51,7 @@ export default function AlgoForge() {
   const [openPos, setOpenPos]           = useState<any[]>([]);
   const [closedPos, setClosedPos]       = useState<any[]>([]);
   const [activeAssets, setActiveAssets] = useState<string[]>([]);
+  const [isMounted, setIsMounted]       = useState(false);
 
   // Config
   const [market, setMarket]           = useState("crypto");
@@ -63,6 +64,7 @@ export default function AlgoForge() {
   useEffect(() => { logsRef.current?.scrollTo(0, 0); }, [logs]);
 
   useEffect(() => {
+    setIsMounted(true);
     let ws: WebSocket;
     let mounted = true;
     const connect = () => {
@@ -143,26 +145,35 @@ export default function AlgoForge() {
         {/* LEFT SIDEBAR */}
         <aside className="w-64 border-r border-gray-800 flex flex-col gap-4 p-4 overflow-y-auto flex-shrink-0">
           {/* Controls */}
-          <div className="bg-[#161b22] border border-gray-800 rounded-xl p-4">
+          <div className="bg-[#161b22] border border-gray-800 rounded-xl p-4 min-h-[170px]">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Zap className="w-3 h-3" /> Engine Controls</div>
-            <div className="flex flex-col gap-2">
-              <button onClick={() => cmd("start")} disabled={running}
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg font-semibold text-sm transition-all bg-green-600 hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed text-white">
-                <Play className="w-4 h-4" /> START TRADING
-              </button>
-              <button onClick={() => cmd("stop")} disabled={!running}
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg font-semibold text-sm transition-all bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-white">
-                <Square className="w-4 h-4" /> PAUSE
-              </button>
-              <button onClick={() => cmd("reset")}
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg font-semibold text-sm transition-all bg-yellow-700 hover:bg-yellow-600 text-white">
-                <RefreshCw className="w-4 h-4" /> RESET ALL DATA
-              </button>
-              <button onClick={() => cmd("flatten")}
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg font-semibold text-sm transition-all bg-red-700 hover:bg-red-600 text-white mt-1">
-                <ShieldAlert className="w-4 h-4" /> EMERGENCY FLATTEN
-              </button>
-            </div>
+            {isMounted ? (
+              <div className="flex flex-col gap-2">
+                <button onClick={() => cmd("start")} disabled={running}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg font-semibold text-sm transition-all bg-green-600 hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed text-white">
+                  <Play className="w-4 h-4" /> START TRADING
+                </button>
+                <button onClick={() => cmd("stop")} disabled={!running}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg font-semibold text-sm transition-all bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-white">
+                  <Square className="w-4 h-4" /> PAUSE
+                </button>
+                <button onClick={() => cmd("reset")}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg font-semibold text-sm transition-all bg-yellow-700 hover:bg-yellow-600 text-white">
+                  <RefreshCw className="w-4 h-4" /> RESET ALL DATA
+                </button>
+                <button onClick={() => cmd("flatten")}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg font-semibold text-sm transition-all bg-red-700 hover:bg-red-600 text-white mt-1">
+                  <ShieldAlert className="w-4 h-4" /> EMERGENCY FLATTEN
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 opacity-50">
+                <div className="w-full h-9 bg-gray-800 rounded-lg animate-pulse" />
+                <div className="w-full h-9 bg-gray-800 rounded-lg animate-pulse" />
+                <div className="w-full h-9 bg-gray-800 rounded-lg animate-pulse" />
+                <div className="w-full h-9 bg-gray-800 rounded-lg animate-pulse mt-1" />
+              </div>
+            )}
           </div>
 
           {/* Config */}
