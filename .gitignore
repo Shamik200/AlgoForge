@@ -58,3 +58,12 @@ pnpm-lock.yaml
 *.db
 *.sqlite
 *.sqlite3
+
+# Machine Learning & Data files
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+*.npy
+*.npz
