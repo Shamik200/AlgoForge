@@ -78,6 +78,10 @@ class PaperConnector(ConnectorBase):
     def trade_history(self) -> list[TradeRecord]:
         return self._engine._trade_history
 
+    @property
+    def equity(self) -> float:
+        return self._engine.equity
+
     def snapshot(self) -> Any:
         return self._engine.snapshot()
 

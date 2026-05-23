@@ -35,10 +35,9 @@ class TestRLOrchestratorIntegration:
         assert orch._enable_rl_adjustment is True
         
         # Verify baseline thresholds are set
-        # conviction_threshold_low is 0.15 (lowered from 0.3 to let more
-        # signals through to the risk manager for proper evaluation)
-        assert orch._conviction_threshold_low == 0.15
-        assert orch._conviction_threshold_high == 0.6
+        # Raised conviction threshold baseline to prevent poor-quality trades
+        assert orch._conviction_threshold_low == 0.35
+        assert orch._conviction_threshold_high == 0.65
     
     def test_orchestrator_can_disable_rl_agent(self):
         """Test that RL Agent can be disabled."""
@@ -263,8 +262,8 @@ class TestRLOrchestratorIntegration:
         )
         
         # Verify initial thresholds match defaults
-        assert orch._conviction_threshold_low == 0.15  # Default low threshold
-        assert orch._conviction_threshold_high == 0.6
+        assert orch._conviction_threshold_low == 0.35  # Default low threshold
+        assert orch._conviction_threshold_high == 0.65
         
         # Apply adjustments to use RL thresholds
         orch.apply_rl_adjustments()

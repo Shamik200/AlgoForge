@@ -76,6 +76,12 @@ class ConnectorBase(abc.ABC):
         """List historical trades."""
         pass
 
+    @property
+    @abc.abstractmethod
+    def equity(self) -> float:
+        """Get current total portfolio equity."""
+        pass
+
     @abc.abstractmethod
     def snapshot(self) -> Any:
         """Get current portfolio state snapshot."""

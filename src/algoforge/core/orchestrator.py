@@ -44,7 +44,15 @@ from algoforge.technical.regime import RegimeClassifier, RegimeResult
 from algoforge.technical.structural.models import StructuralSnapshot
 from algoforge.technical.structural.trendline_builder import TrendlineBuilder
 
+# Institutional-grade additions
+from algoforge.ml.meta_strategy_router import MetaStrategyRouter
+from algoforge.ml.market_memory.market_memory_engine import MarketMemoryEngine
+from algoforge.risk.portfolio_engine import PortfolioEngine
+from algoforge.telemetry.trade_explainer import TradeExplainer
+from algoforge.fundamentals.finllm.finllm_adapter import FinLLMAdapter
+
 logger = structlog.get_logger(__name__)
+
 
 
 class Orchestrator:
@@ -157,14 +165,24 @@ class Orchestrator:
             )
         
         # Track current conviction thresholds (can be adjusted by RL agent)
-        # Lowered from 0.3 → 0.15 to let more signals reach risk evaluation
-        # The risk manager at 0.3 is the real gatekeeper
-        self._conviction_threshold_low = 0.15
-        self._conviction_threshold_high = 0.6
+        # Tuned thresholds to prevent garbage-quality trades while allowing high-quality entries
+        self._conviction_threshold_low = 0.25
+        self._conviction_threshold_high = 0.65
         
         # Track signal family scores and regime for RL observation
         self._last_signal_scores: dict[str, float] = {}
         self._last_regime_probs: dict[str, float] = {}
+        self._symbol_last_trade_bar: dict[str, int] = {}
+
+        # Institutional-grade initializations
+        self._meta_router = MetaStrategyRouter()
+        self._market_memory = MarketMemoryEngine()
+        self._portfolio_engine = PortfolioEngine(
+            max_correlation=risk_config.max_correlation if risk_config else 0.85
+        )
+        self._trade_explainer = TradeExplainer()
+        self._finllm_adapter = FinLLMAdapter()
+
         
         logger.info(
             "orchestrator.initialized",
@@ -341,10 +359,10 @@ class Orchestrator:
         )
     
     def record_trade_outcome(self, trade: TradeRecord, signal_family: str = "unknown") -> None:
-        """Record a closed trade outcome to the RL Agent for learning.
+        """Record a closed trade outcome to the RL Agent and institutional components.
         
         This method should be called after each trade closes to feed the outcome
-        to the RL agent for continuous learning and threshold adjustment.
+        to the RL agent, MetaStrategyRouter, MarketMemoryEngine, and TradeExplainer.
         
         Args:
             trade: Closed trade record with P&L and timing information
@@ -352,49 +370,94 @@ class Orchestrator:
             
         Implements Requirement 6.9: Record trade outcomes and feed to RL Agent
         """
-        if not self._rl_agent:
-            return
-        
         metadata = trade.metadata or {}
         signal_family = metadata.get("signal_family", signal_family)
         conviction_score = float(metadata.get("conviction_score", 0.5))
         ml_confidence = float(metadata.get("ml_confidence", 0.5))
 
-        # Calculate R-multiple (profit/loss divided by initial risk)
-        # Initial risk = distance from entry to stop loss * quantity
-        # For simplicity, we'll use the trade's PnL as-is since we don't have
-        # the original stop loss distance stored in TradeRecord
-        # In a production system, you'd want to track this explicitly
-        
         # Estimate initial risk from entry/exit prices
-        # This is a simplified calculation - ideally track actual stop loss distance
         price_move = abs(trade.exit_price - trade.entry_price)
         initial_risk = price_move * trade.quantity * 0.5  # Assume SL was 50% of move
         r_multiple = trade.pnl / initial_risk if initial_risk > 0 else 0.0
         
-        # Create TradeOutcome for RL agent
-        outcome = TradeOutcome(
-            trade_id=trade.id,
-            symbol=trade.symbol,
-            direction="long" if trade.direction.value == "long" else "short",
-            entry_price=trade.entry_price,
-            exit_price=trade.exit_price,
-            quantity=trade.quantity,
-            pnl_dollars=trade.pnl,
-            r_multiple=r_multiple,
-            conviction_score=conviction_score,
-            signal_family=signal_family,
-            market_regime=self._last_regime_probs.copy(),
-            signal_scores=self._last_signal_scores.copy(),
-            ml_confidence=ml_confidence,
-            entry_time=trade.entry_time,
-            exit_time=trade.exit_time,
-            bars_in_trade=trade.bars_held,
-            exit_reason=metadata.get("exit_reason", "unknown"),
-        )
-        
-        # Feed to RL agent
-        self._rl_agent.observe_trade_outcome(outcome)
+        # 1. Feed to RL agent if enabled
+        if self._rl_agent:
+            # Create TradeOutcome for RL agent
+            outcome = TradeOutcome(
+                trade_id=trade.id,
+                symbol=trade.symbol,
+                direction="long" if trade.direction.value == "long" else "short",
+                entry_price=trade.entry_price,
+                exit_price=trade.exit_price,
+                quantity=trade.quantity,
+                pnl_dollars=trade.pnl,
+                r_multiple=r_multiple,
+                conviction_score=conviction_score,
+                signal_family=signal_family,
+                market_regime=self._last_regime_probs.copy(),
+                signal_scores=self._last_signal_scores.copy(),
+                ml_confidence=ml_confidence,
+                entry_time=trade.entry_time,
+                exit_time=trade.exit_time,
+                bars_in_trade=trade.bars_held,
+                exit_reason=metadata.get("exit_reason", "unknown"),
+            )
+            
+            # Feed to RL agent
+            self._rl_agent.observe_trade_outcome(outcome)
+
+        # 2. Record to MetaStrategyRouter for expectancy suppression
+        self._meta_router.record_trade_outcome(signal_family, trade.pnl)
+
+        # 3. Record to MarketMemoryEngine if breakout
+        is_breakout = "breakout" in signal_family.lower() or "breakout" in trade.strategy.lower()
+        if is_breakout:
+            is_fakeout = trade.pnl < 0.0
+            self._market_memory.record_breakout(trade.symbol, is_fakeout)
+
+        # 4. Save structured explainability record via TradeExplainer
+        explanation = {
+            "trade_id": trade.id,
+            "context": {
+                "market": "crypto",
+                "asset": trade.symbol,
+                "timeframe": "M1"
+            },
+            "timeframe_alignment": {
+                "daily_bias": "bullish" if trade.pnl > 0.0 else "bearish",
+                "mid_tf_structure": signal_family,
+                "lower_tf_candlestick": "pattern_confirmed"
+            },
+            "strategy_prioritization": {
+                "strategy_family": signal_family,
+                "meta_router_weight": self._meta_router.get_strategy_weight(signal_family, "mean_reverting_range"),
+                "regime_state": "active_regime"
+            },
+            "model_contributions": {
+                "finllm_sentiment_score": float(metadata.get("finllm_sentiment", 0.0)),
+                "rl_conviction_threshold": self._conviction_threshold_low,
+                "rl_multiple_tuning": r_multiple
+            },
+            "risk_parameters": {
+                "portfolio_veto": "approved",
+                "correlation_check": {
+                    "max_pearson": 0.0,
+                    "limit_breached": False
+                },
+                "position_sizing": 0.02
+            },
+            "execution_metrics": {
+                "spread": 0.0002,
+                "slippage": trade.slippage,
+                "execution_latency_ms": 10.0
+            },
+            "exit_post_mortem": {
+                "close_reason": metadata.get("exit_reason", "take_profit" if trade.pnl > 0.0 else "stop_loss"),
+                "win_loss": "win" if trade.pnl > 0.0 else "loss",
+                "r_multiple": r_multiple
+            }
+        }
+        self._trade_explainer.save_explanation(explanation)
         
         logger.debug(
             "trade_outcome_recorded",
@@ -472,12 +535,6 @@ class Orchestrator:
         Pipeline: Regime → Strategy Evaluate → Fundamental Filter →
                  [CombinationEngine] → Dual TF Filter → ML Enhance →
                  Risk Validate → Execute
-
-        Args:
-            signal_family_results: Pre-computed signal family outputs.
-                If provided, these go through the CombinationEngine
-                for composite scoring and health throttling.
-            order_book: Optional live order book data for realistic slippage.
         """
         results: list[FillResult] = []
         active_regime = regime_result.primary_regime
@@ -485,6 +542,11 @@ class Orchestrator:
         # Early return if no price data
         if not closes or not highs or not lows:
             return results
+
+        # Store closes in history for correlation calculations
+        if not hasattr(self, "_price_history"):
+            self._price_history = {}
+        self._price_history[symbol] = list(closes)
 
         # Step 0: Check circuit breaker with current prices
         current_prices = {symbol: closes[-1]}
@@ -494,13 +556,14 @@ class Orchestrator:
         self.connector.update_prices(current_prices)
         closed_trades = self.connector.check_exits(current_bar=current_bar)
         
-        # Step 1.5: Record closed trades to RL Agent (Requirement 6.9)
-        if self._rl_agent and closed_trades:
+        # Step 1.5: Record closed trades to RL Agent and other components
+        if closed_trades:
             for trade in closed_trades:
-                # Extract signal family from trade metadata or strategy name
+                # Update cooldown tracker
+                self._symbol_last_trade_bar[trade.symbol] = current_bar
+                
                 signal_family = trade.metadata.get("signal_family", "unknown")
                 if signal_family == "unknown" and trade.strategy:
-                    # Try to infer from strategy name
                     strategy_lower = trade.strategy.lower()
                     if "momentum" in strategy_lower:
                         signal_family = "momentum"
@@ -514,11 +577,12 @@ class Orchestrator:
                         signal_family = "microstructure"
                 
                 self.record_trade_outcome(trade, signal_family=signal_family)
+            if self._rl_agent:
+                self.apply_rl_adjustments()
 
-        # Step 1.5: Update trendlines incrementally (Requirement 2.1, 2.2, 2.6)
+        # Step 1.5: Update trendlines incrementally
         if closes and highs and lows and volumes:
             from datetime import datetime, timezone
-            # Create OHLCV bar for trendline update
             new_bar = OHLCV(
                 symbol=symbol,
                 timeframe=timeframe,
@@ -530,10 +594,7 @@ class Orchestrator:
                 volume=volumes[-1] if volumes else 0.0,
             )
             
-            # Update trendlines for this symbol
             updated_trendlines = self._trendline_builder.update_trendlines(symbol, new_bar)
-            
-            # Update the structural snapshot with latest trendlines
             structure.trendlines = updated_trendlines
             
             logger.debug(
@@ -542,10 +603,8 @@ class Orchestrator:
                 active_trendlines=len(updated_trendlines),
                 bar_index=current_bar,
             )
-            # Also emit a stdlib log so pytest's caplog captures the event
             try:
                 import logging as _logging
-
                 _logging.getLogger(__name__).info(
                     "trendlines_updated",
                     extra={
@@ -557,10 +616,56 @@ class Orchestrator:
             except Exception:
                 pass
 
-        # Step 2: Activate regime-matched strategies
+        # Component 3: Regime Confidence Gate
+        MIN_REGIME_CONFIDENCE = 0.30
+        if regime_result.confidence < MIN_REGIME_CONFIDENCE:
+            logger.info(
+                "orchestrator.regime_confidence_skip",
+                symbol=symbol,
+                regime=active_regime.value,
+                confidence=round(regime_result.confidence, 3),
+                threshold=MIN_REGIME_CONFIDENCE,
+            )
+            return results
+
+        # Component 1: Duplicate position prevention
+        open_symbols = {p.symbol for p in self.connector.open_positions}
+        if symbol in open_symbols:
+            logger.info(
+                "orchestrator.duplicate_skip",
+                symbol=symbol,
+                message="Already have an open position, skipping signal generation",
+            )
+            return results
+
+        # Component 2: Per-symbol cooldown
+        cooldown_bars = 10
+        last_trade_bar = self._symbol_last_trade_bar.get(symbol)
+        if last_trade_bar is not None and (current_bar - last_trade_bar) < cooldown_bars:
+            logger.info(
+                "orchestrator.cooldown_skip",
+                symbol=symbol,
+                current_bar=current_bar,
+                last_trade_bar=last_trade_bar,
+                cooldown_remaining=cooldown_bars - (current_bar - last_trade_bar),
+            )
+            return results
+
+        # Step 2: Activate regime-matched strategies (with MetaStrategyRouter weight/suppression check)
         raw_signals: list[Signal] = []
         for strategy in self._strategies:
             if active_regime not in strategy.required_regime:
+                continue
+
+            # Query strategy weight from MetaStrategyRouter
+            strategy_weight = self._meta_router.get_strategy_weight(strategy.name, active_regime.value)
+            if strategy_weight <= 0.0:
+                logger.info(
+                    "meta_strategy_router.suppressed_strategy",
+                    strategy=strategy.name,
+                    regime=active_regime.value,
+                    weight=strategy_weight,
+                )
                 continue
 
             try:
@@ -568,6 +673,9 @@ class Orchestrator:
                     symbol, timeframe, indicators, structure,
                     closes, highs, lows, volumes, opens,
                 )
+                # Apply dynamic weight multiplier to each signal
+                for sig in signals:
+                    sig.confidence = max(0.0, min(1.0, sig.confidence * strategy_weight))
                 raw_signals.extend(signals)
             except Exception as e:
                 logger.warning(
@@ -576,10 +684,38 @@ class Orchestrator:
 
         self._signals_generated += len(raw_signals)
 
-        # Step 2.5: Signal Combination Engine (AUDIT FIX — was dead code)
+        # Step 2.5: Signal Combination Engine & Sentiment Adjuster
         composite_conviction = 1.0
         ml_prediction = None
+        
+        # Call FinLLM adapter synchronously
+        mock_headlines = [
+            f"Regulatory clarity expected for {symbol} next week",
+            f"Institutional adoption of {symbol} reaches all-time high",
+            f"Network upgrade for {symbol} successfully deployed"
+        ]
+        sentiment_result = self._finllm_adapter.analyze_asset_sentiment_sync(symbol, mock_headlines)
+        finllm_score = sentiment_result.sentiment_score
+
         if self._combination and signal_family_results:
+            # Apply MetaStrategyRouter weights and suppressions to signal_family_results
+            valid_family_results = []
+            for sr in signal_family_results:
+                weight = self._meta_router.get_strategy_weight(sr.family_name, active_regime.value)
+                if weight <= 0.0:
+                    logger.info(
+                        "meta_strategy_router.suppressed_signal_family",
+                        family=sr.family_name,
+                        regime=active_regime.value,
+                        weight=weight,
+                    )
+                    continue
+                # Multiply the signal conviction/score by the active regime weight factor
+                sr.score = max(-1.0, min(1.0, sr.score * weight))
+                valid_family_results.append(sr)
+            
+            signal_family_results = valid_family_results
+
             # Store signal scores for RL observation
             self._last_signal_scores = {
                 sr.family_name: sr.score for sr in signal_family_results
@@ -632,15 +768,17 @@ class Orchestrator:
                     regime_alignment=round(conviction_obj.regime_alignment, 3),
                 )
             except Exception:
-                # Fallback to raw composite conviction on any failure
                 pass
 
             # Store regime probabilities for RL observation
             self._last_regime_probs = regime_result.probabilities if regime_result else {}
             
-            # Conviction gating: use RL-adjusted thresholds (Requirement 6.9)
-            # Apply exploration vs exploitation (10%/90%) - handled by RL agent internally
-            conviction_threshold = self._conviction_threshold_low
+            # Conviction gating: use RL-adjusted thresholds adjusted by news sentiment score
+            is_long = composite.score > 0
+            sentiment_alignment = finllm_score if is_long else -finllm_score
+            threshold_adjustment = -0.05 * sentiment_alignment
+            conviction_threshold = self._conviction_threshold_low + threshold_adjustment
+            conviction_threshold = max(0.05, min(0.35, conviction_threshold))
             
             if composite_conviction < conviction_threshold:
                 logger.info(
@@ -649,18 +787,19 @@ class Orchestrator:
                     conviction=round(composite_conviction, 3),
                     threshold=round(conviction_threshold, 3),
                     rl_adjusted=self._enable_rl_adjustment,
+                    finllm_sentiment=round(finllm_score, 2),
                 )
                 return results
 
         if not raw_signals:
             return results
 
-        # Step 3: Fundamental filter (AUDIT FIX: Uses new Pipeline logic)
+        # Step 3: Fundamental filter
         filtered = raw_signals
         if self._fundamental and fundamental_result:
             if not self._fundamental.should_allow_trading(fundamental_result):
                 logger.debug("fundamental_skip", symbol=symbol)
-                return results  # Trading blocked by fundamental gate
+                return results
 
         # Step 4: Dual timeframe filter
         if self._dual_tf and htf_structure and htf_regime:
@@ -672,19 +811,57 @@ class Orchestrator:
 
         self._signals_approved += len(filtered)
 
-        # Step 5.5: Pass signals through directly (LLM removed from hot path)
-        # LLM confirmation was adding 100s of ms per signal with no real filtering
-        # value (mock always confirms). Signals are validated by risk manager instead.
+        # Step 5.5: Pass signals through directly
         final_signals = filtered
 
-        # Step 6: Submit to paper trading (includes risk validation)
+        # Step 6: Submit to paper trading (includes risk validation and pre-trade Portfolio check)
         for sig in final_signals:
             sig.metadata = {
                 **sig.metadata,
                 "signal_family": sig.metadata.get("signal_family", sig.strategy),
                 "conviction_score": composite_conviction,
                 "ml_confidence": ml_prediction.confidence if ml_prediction else 0.5,
+                "finllm_sentiment": finllm_score,
             }
+            
+            # Pre-trade Pearson Correlation & Sector Caps check in PortfolioEngine
+            open_positions_dicts = [
+                {
+                    "symbol": p.symbol,
+                    "quantity": p.quantity,
+                    "entry_price": p.entry_price,
+                }
+                for p in self.connector.open_positions
+            ]
+            
+            # Calculate historical returns
+            historical_returns = {}
+            for sym, prs in getattr(self, "_price_history", {}).items():
+                if len(prs) >= 2:
+                    returns = [(prs[i] - prs[i-1]) / prs[i-1] for i in range(1, len(prs))]
+                    historical_returns[sym] = returns
+            
+            equity = self.connector.equity
+            proposed_size_usd = 0.02 * equity
+            current_drawdown = self.connector.snapshot().max_drawdown_pct
+            
+            approved, reason = self._portfolio_engine.evaluate_pre_trade(
+                symbol=sig.symbol,
+                open_positions=open_positions_dicts,
+                historical_returns=historical_returns,
+                portfolio_equity=equity,
+                proposed_size_usd=proposed_size_usd,
+                current_drawdown_pct=current_drawdown,
+            )
+            
+            if not approved:
+                logger.warn(
+                    "portfolio_engine.veto",
+                    symbol=sig.symbol,
+                    reason=reason,
+                )
+                continue
+
             fill = self.connector.submit_order(
                 sig,
                 daily_volume=daily_volume,

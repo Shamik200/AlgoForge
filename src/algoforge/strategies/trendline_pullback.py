@@ -44,10 +44,10 @@ class TrendlinePullback(Strategy):
 
     def __init__(
         self,
-        atr_touch_multiplier: float = 0.5,
-        atr_sl_multiplier: float = 1.5,
-        min_adx: float = 15.0,
-        min_rr_ratio: float = 1.5,
+        atr_touch_multiplier: float = 0.6,
+        atr_sl_multiplier: float = 2.0,
+        min_adx: float = 20.0,
+        min_rr_ratio: float = 2.2,
         momentum_bars: int = 2,
     ) -> None:
         self._atr_touch = atr_touch_multiplier
@@ -140,12 +140,14 @@ class TrendlinePullback(Strategy):
         current_close = closes[-1]
         active_trendlines = structure.active_trendlines
 
-        # Detect candlestick patterns
+        # Detect candlestick patterns (lookback optimized)
         opens_arr = np.array(opens, dtype=np.float64)
         highs_arr = np.array(highs, dtype=np.float64)
         lows_arr = np.array(lows, dtype=np.float64)
         closes_arr = np.array(closes, dtype=np.float64)
-        patterns = self._candle_detector.detect(opens_arr, highs_arr, lows_arr, closes_arr)
+        patterns = self._candle_detector.detect(
+            opens_arr, highs_arr, lows_arr, closes_arr, lookback=self._momentum_bars + 3
+        )
 
         for tl in active_trendlines:
             tl_price = tl.price_at(n - 1)

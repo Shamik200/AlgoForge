@@ -13,7 +13,15 @@ import math
 from typing import Any
 
 from algoforge.backtest.models import TradePnL
-from algoforge.dashboard.models import EquityPoint
+@dataclass
+class EquityPoint:
+    """A single point on the equity curve."""
+    timestamp: str
+    value: float
+
+    def to_dict(self) -> dict:
+        return {"timestamp": self.timestamp, "value": round(self.value, 2)}
+
 from algoforge.execution.paper import TradeRecord
 
 

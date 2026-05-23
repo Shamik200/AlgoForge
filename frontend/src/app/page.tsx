@@ -3,8 +3,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 import { Play, Square, ShieldAlert, RefreshCw, Settings, TrendingUp, TrendingDown, Minus, Activity, Zap, DollarSign, BarChart2, AlertCircle, Target, Brain, Gauge, TrendingUpDown, Lock, Unlock } from "lucide-react";
 
-const API = "http://127.0.0.1:8000";
-const WS  = "ws://127.0.0.1:8000/ws/telemetry";
+const API = "http://127.0.0.1:8080";
+const WS  = "ws://127.0.0.1:8080/ws/telemetry";
 
 const REGIME_COLOR: Record<string, string> = {
   trending:       "text-blue-400",
@@ -52,6 +52,7 @@ export default function AlgoForge() {
   const [closedPos, setClosedPos]       = useState<any[]>([]);
   const [activeAssets, setActiveAssets] = useState<string[]>([]);
   const [isMounted, setIsMounted]       = useState(false);
+  const [wsConnected, setWsConnected]   = useState(false);
 
   // Config
   const [market, setMarket]           = useState("crypto");
@@ -63,47 +64,85 @@ export default function AlgoForge() {
   const logsRef = useRef<HTMLDivElement>(null);
   useEffect(() => { logsRef.current?.scrollTo(0, 0); }, [logs]);
 
+  // Dynamic host resolution helper
+  const getApiUrl = () => {
+    if (typeof window === "undefined") return API;
+    return `http://${window.location.hostname}:8080`;
+  };
+
   useEffect(() => {
     setIsMounted(true);
     let ws: WebSocket;
     let mounted = true;
+    
     const connect = () => {
-      ws = new WebSocket(WS);
-      ws.onmessage = (e) => {
-        const d = JSON.parse(e.data);
-        setStatus(d.status || "OFFLINE");
-        if (d.equity           !== undefined) setEquity(d.equity);
-        if (d.cash             !== undefined) setCash(d.cash);
-        if (d.positions        !== undefined) setPositions(d.positions);
-        if (d.total_trades     !== undefined) setTotalTrades(d.total_trades);
-        if (d.winning_trades   !== undefined) setWins(d.winning_trades);
-        if (d.losing_trades    !== undefined) setLosses(d.losing_trades);
-        if (d.total_pnl        !== undefined) setTotalPnl(d.total_pnl);
-        if (d.total_commission !== undefined) setTotalComm(d.total_commission);
-        if (d.max_drawdown_pct !== undefined) setDrawdown(d.max_drawdown_pct);
-        if (d.signals_generated !== undefined) setSigGen(d.signals_generated);
-        if (d.signals_filled    !== undefined) setSigFill(d.signals_filled);
-        if (d.equity_curve)     setEquityCurve(d.equity_curve.map((p: any) => ({ ...p, time: p.time?.slice(11, 16) })));
-        if (d.logs)             setLogs(d.logs);
-        if (d.scored_assets)    setScoredAssets(d.scored_assets);
-        if (d.open_positions)   setOpenPos(d.open_positions);
-        if (d.closed_positions) setClosedPos(d.closed_positions);
-        if (d.active_assets)    setActiveAssets(d.active_assets);
-      };
-      ws.onclose = () => { if (mounted) setTimeout(connect, 3000); };
+      if (!mounted) return;
+      const hostname = typeof window !== "undefined" ? window.location.hostname : "127.0.0.1";
+      const wsUrl = `ws://${hostname}:8080/ws/telemetry`;
+      
+      try {
+        ws = new WebSocket(wsUrl);
+        
+        ws.onopen = () => {
+          if (mounted) setWsConnected(true);
+        };
+        
+        ws.onmessage = (e) => {
+          if (!mounted) return;
+          const d = JSON.parse(e.data);
+          setStatus(d.status || "OFFLINE");
+          if (d.equity           !== undefined) setEquity(d.equity);
+          if (d.cash             !== undefined) setCash(d.cash);
+          if (d.positions        !== undefined) setPositions(d.positions);
+          if (d.total_trades     !== undefined) setTotalTrades(d.total_trades);
+          if (d.winning_trades   !== undefined) setWins(d.winning_trades);
+          if (d.losing_trades    !== undefined) setLosses(d.losing_trades);
+          if (d.total_pnl        !== undefined) setTotalPnl(d.total_pnl);
+          if (d.total_commission !== undefined) setTotalComm(d.total_commission);
+          if (d.max_drawdown_pct !== undefined) setDrawdown(d.max_drawdown_pct);
+          if (d.signals_generated !== undefined) setSigGen(d.signals_generated);
+          if (d.signals_filled    !== undefined) setSigFill(d.signals_filled);
+          if (d.equity_curve)     setEquityCurve(d.equity_curve.map((p: any) => ({ ...p, time: p.time?.slice(11, 16) })));
+          if (d.logs)             setLogs(d.logs);
+          if (d.scored_assets)    setScoredAssets(d.scored_assets);
+          if (d.open_positions)   setOpenPos(d.open_positions);
+          if (d.closed_positions) setClosedPos(d.closed_positions);
+          if (d.active_assets)    setActiveAssets(d.active_assets);
+        };
+        
+        ws.onclose = () => {
+          if (mounted) {
+            setWsConnected(false);
+            setTimeout(connect, 3000);
+          }
+        };
+        
+        ws.onerror = () => {
+          if (mounted) {
+            setWsConnected(false);
+            ws.close();
+          }
+        };
+      } catch (err) {
+        if (mounted) {
+          setWsConnected(false);
+          setTimeout(connect, 3000);
+        }
+      }
     };
+    
     connect();
     return () => { mounted = false; ws?.close(); };
   }, []);
 
   const cmd = async (action: string) => {
-    try { await fetch(`${API}/api/system/${action}`, { method: "POST" }); }
+    try { await fetch(`${getApiUrl()}/api/system/${action}`, { method: "POST" }); }
     catch { /* backend logs it */ }
   };
 
   const applyConfig = async () => {
     try {
-      await fetch(`${API}/api/config`, {
+      await fetch(`${getApiUrl()}/api/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ market, broker, universe_size: universeSize, selected_assets_count: 5, min_liquidity: 1000000, volatility_filter: 1.5, max_risk_pct: 1.5, max_drawdown_pct: 15.0 }),
@@ -133,10 +172,25 @@ export default function AlgoForge() {
             <div className="text-xs text-gray-500 uppercase tracking-widest">Free Cash</div>
             <div className="text-lg font-semibold text-gray-300">${cash.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
-          <div className="flex items-center gap-2">
-            {running
-              ? <span className="flex items-center gap-2 text-green-400 font-bold"><span className="animate-pulse w-2 h-2 rounded-full bg-green-400 inline-block" />LIVE</span>
-              : <span className="flex items-center gap-2 text-red-500 font-bold"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />OFFLINE</span>}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 border-r border-gray-800 pr-4">
+              {wsConnected ? (
+                <span className="flex items-center gap-1.5 text-xs text-blue-400 font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block animate-pulse" />
+                  Telemetry Connected
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-xs text-amber-500 font-medium animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                  Telemetry Reconnecting...
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {running
+                ? <span className="flex items-center gap-2 text-green-400 font-bold"><span className="animate-pulse w-2 h-2 rounded-full bg-green-400 inline-block" />LIVE</span>
+                : <span className="flex items-center gap-2 text-red-500 font-bold"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />OFFLINE</span>}
+            </div>
           </div>
         </div>
       </header>
@@ -145,7 +199,7 @@ export default function AlgoForge() {
         {/* LEFT SIDEBAR */}
         <aside className="w-64 border-r border-gray-800 flex flex-col gap-4 p-4 overflow-y-auto flex-shrink-0">
           {/* Controls */}
-          <div className="bg-[#161b22] border border-gray-800 rounded-xl p-4 min-h-[170px]">
+          <div className="bg-[#161b22] border border-gray-800 rounded-xl p-4">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Zap className="w-3 h-3" /> Engine Controls</div>
             {isMounted ? (
               <div className="flex flex-col gap-2">
@@ -181,29 +235,29 @@ export default function AlgoForge() {
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Settings className="w-3 h-3" /> Configuration</div>
             <div className="flex flex-col gap-3">
               <div>
-                <label className="text-xs text-gray-600 block mb-1">Market</label>
+                <label className="text-xs text-gray-400 font-medium block mb-1">Market</label>
                 <select value={market} onChange={e => setMarket(e.target.value)}
                   className="w-full bg-[#0d1117] border border-gray-700 rounded-md p-1.5 text-xs text-white focus:border-blue-500 outline-none">
                   <option value="crypto">Crypto</option>
                   <option value="forex">Forex</option>
-                  <option value="stocks">Stocks</option>
+                  <option value="stocks_us">Stocks (US)</option>
+                  <option value="stocks_india">Stocks (India)</option>
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-600 block mb-1">Broker</label>
+                <label className="text-xs text-gray-400 font-medium block mb-1">Broker</label>
                 <select value={broker} onChange={e => setBroker(e.target.value)}
                   className="w-full bg-[#0d1117] border border-gray-700 rounded-md p-1.5 text-xs text-white focus:border-blue-500 outline-none">
                   <option value="binance">Binance</option>
-                  <option value="bybit">Bybit</option>
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-600 block mb-1">Universe Size</label>
+                <label className="text-xs text-gray-400 font-medium block mb-1">Universe Size</label>
                 <input type="number" value={universeSize} onChange={e => setUnivSize(+e.target.value)}
                   className="w-full bg-[#0d1117] border border-gray-700 rounded-md p-1.5 text-xs text-white outline-none" />
               </div>
               <div>
-                <label className="text-xs text-gray-600 block mb-1">Score Threshold</label>
+                <label className="text-xs text-gray-400 font-medium block mb-1">Score Threshold</label>
                 <input type="number" value={threshold} onChange={e => setThreshold(+e.target.value)}
                   className="w-full bg-[#0d1117] border border-gray-700 rounded-md p-1.5 text-xs text-white outline-none" />
               </div>

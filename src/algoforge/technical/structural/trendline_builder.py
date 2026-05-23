@@ -99,34 +99,48 @@ class TrendlineBuilder:
     ) -> bool:
         """Validate trendline hasn't been broken by consecutive violations.
 
-        For upper (resistance) lines: broken if close stays above for max_violation_bars
-        For lower (support) lines: broken if close stays below for max_violation_bars
+        Optimized using highly efficient vectorized NumPy operations.
         """
-        consecutive_violations = 0
         n = len(prices)
+        if n == 0:
+            return True
 
-        for i in range(n):
-            line_price = slope * i + intercept
-            if line_price <= 0:
-                continue
+        indices = np.arange(n)
+        line_prices = slope * indices + intercept
 
-            # Tolerance based on ATR if available, else percentage
-            if atr_values is not None and not np.isnan(atr_values[i]):
-                tolerance = atr_values[i] * 0.5
-            else:
-                tolerance = line_price * self._touch_tolerance_pct
+        # Filter out line prices <= 0
+        valid_mask = line_prices > 0
+        if not valid_mask.any():
+            return True
 
-            if is_upper and prices[i] > line_price + tolerance:
-                consecutive_violations += 1
-            elif not is_upper and prices[i] < line_price - tolerance:
-                consecutive_violations += 1
-            else:
-                consecutive_violations = 0
+        # Calculate tolerances
+        if atr_values is not None and len(atr_values) == n:
+            atr_tolerance = atr_values * 0.5
+            pct_tolerance = line_prices * self._touch_tolerance_pct
+            tolerance = np.where(np.isnan(atr_tolerance), pct_tolerance, atr_tolerance)
+        else:
+            tolerance = line_prices * self._touch_tolerance_pct
 
-            if consecutive_violations > self._max_violation_bars:
-                return False
+        # Check violations
+        if is_upper:
+            violations = prices > (line_prices + tolerance)
+        else:
+            violations = prices < (line_prices - tolerance)
 
-        return True
+        # Only check violations where line_price is valid (> 0)
+        violations = violations & valid_mask
+
+        # Check for consecutive violations exceeding max_violation_bars
+        w = self._max_violation_bars + 1
+        if len(violations) < w:
+            return True
+
+        # Pure vectorized check for consecutive True values of window size w
+        consec = np.ones(len(violations) - w + 1, dtype=bool)
+        for shift in range(w):
+            consec &= violations[shift : len(violations) - w + 1 + shift]
+
+        return not consec.any()
 
     def _build_lines(
         self,
@@ -141,8 +155,12 @@ class TrendlineBuilder:
 
         candidates: list[Trendline] = []
 
-        # Try all pairs of swing points
-        for p1, p2 in combinations(swing_points, 2):
+        # Prune old swing points to focus on the most recent 25 swing points
+        # This keeps candidates combinations bounded to a max of 300, avoiding O(N^2) explosions
+        recent_swing_points = swing_points[-25:] if len(swing_points) > 25 else swing_points
+
+        # Try all pairs of recent swing points
+        for p1, p2 in combinations(recent_swing_points, 2):
             if abs(p1.index - p2.index) < 3:
                 continue  # Too close together
 

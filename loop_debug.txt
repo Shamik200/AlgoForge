@@ -1,0 +1,3 @@
+[1779000392.5051403] Loop iter start
+[1779000392.50567] Calling log_msg
+[1779000392.506179] log_msg CRASHED: 'charmap' codec can't encode character '\u23f3' in position 32: character maps to <undefined>

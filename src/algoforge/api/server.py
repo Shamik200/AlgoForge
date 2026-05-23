@@ -90,11 +90,20 @@ async def update_config(config: ConfigRequest):
     state.discovery_config.min_liquidity = config.min_liquidity
     state.active_broker = config.broker
 
-    # Clamp values to safe fractional ranges via RiskConfig validators
-    state.risk_config.max_risk_per_trade_pct = min(config.max_risk_pct, 0.10)
-    state.risk_config.max_drawdown_pct = min(config.max_drawdown_pct, 0.50)
+    # Convert whole percentage inputs (e.g. 1.5 for 1.5%) to fractional notation (0.015)
+    raw_risk = config.max_risk_pct
+    if raw_risk > 0.10:
+        raw_risk /= 100.0
 
-    log_msg(state, f"Configuration updated: Market={config.market}, Universe Size={config.universe_size}")
+    raw_drawdown = config.max_drawdown_pct
+    if raw_drawdown > 0.50:
+        raw_drawdown /= 100.0
+
+    # Clamp values to safe fractional ranges via RiskConfig validators
+    state.risk_config.max_risk_per_trade_pct = min(raw_risk, 0.10)
+    state.risk_config.max_drawdown_pct = min(raw_drawdown, 0.50)
+
+    log_msg(state, f"Configuration updated: Market={config.market}, Universe Size={config.universe_size}, Max Risk={state.risk_config.max_risk_per_trade_pct:.3f}")
     await broadcast_telemetry()
     return {"status": "success"}
 
@@ -229,11 +238,31 @@ manager = ConnectionManager()
 
 
 async def broadcast_telemetry():
-    if not state.connector:
-        return
-        
-    snap = state.connector.snapshot()
-    live_equity = snap.equity
+    if state.connector:
+        snap = state.connector.snapshot()
+        live_equity = snap.equity
+        cash = round(snap.cash, 2)
+        positions = snap.open_positions
+        total_trades = snap.total_trades
+        winning_trades = snap.winning_trades
+        losing_trades = snap.losing_trades
+        total_pnl = snap.total_pnl
+        total_commission = snap.total_commission
+        max_drawdown_pct = snap.max_drawdown_pct
+        open_positions = [p.model_dump(mode='json') for p in state.connector.open_positions]
+        closed_positions = [t.model_dump(mode='json') for t in state.connector.trade_history[-20:]]
+    else:
+        live_equity = 100000.0
+        cash = 100000.0
+        positions = 0
+        total_trades = 0
+        winning_trades = 0
+        losing_trades = 0
+        total_pnl = 0.0
+        total_commission = 0.0
+        max_drawdown_pct = 0.0
+        open_positions = []
+        closed_positions = []
 
     if not state.equity_history:
         state.equity_history.append({"time": datetime.now(timezone.utc).isoformat(), "value": live_equity})
@@ -272,18 +301,18 @@ async def broadcast_telemetry():
     msg = scrub_nans({
         "status": "RUNNING" if state.is_running else "STOPPED",
         "equity": live_equity,
-        "cash": round(snap.cash, 2),
-        "positions": snap.open_positions,
-        "total_trades": snap.total_trades,
-        "winning_trades": snap.winning_trades,
-        "losing_trades": snap.losing_trades,
-        "total_pnl": snap.total_pnl,
-        "total_commission": snap.total_commission,
-        "max_drawdown_pct": snap.max_drawdown_pct,
-        "signals_generated": state.orchestrator._signals_generated,
-        "signals_filled": state.orchestrator._signals_filled,
-        "open_positions": [p.model_dump(mode='json') for p in state.connector.open_positions],
-        "closed_positions": [t.model_dump(mode='json') for t in state.connector.trade_history[-20:]],
+        "cash": cash,
+        "positions": positions,
+        "total_trades": total_trades,
+        "winning_trades": winning_trades,
+        "losing_trades": losing_trades,
+        "total_pnl": total_pnl,
+        "total_commission": total_commission,
+        "max_drawdown_pct": max_drawdown_pct,
+        "signals_generated": getattr(state.orchestrator, '_signals_generated', 0),
+        "signals_filled": getattr(state.orchestrator, '_signals_filled', 0),
+        "open_positions": open_positions,
+        "closed_positions": closed_positions,
         "equity_curve": state.equity_history,
         "scored_assets": live_assets,
         "active_assets": state.selected_assets,
@@ -302,3 +331,8 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("algoforge.api.server:app", host="127.0.0.1", port=8080, reload=True)

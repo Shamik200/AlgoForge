@@ -91,6 +91,11 @@ class ShadowConnector(ConnectorBase):
     def snapshot(self) -> PortfolioSnapshot:
         """Return live portfolio snapshot."""
         return self.live.snapshot()
+
+    @property
+    def equity(self) -> float:
+        """Return live equity as the source of truth."""
+        return self.live.equity
         
     def get_paper_snapshot(self) -> PortfolioSnapshot:
         """Return paper portfolio snapshot for drift comparison."""

@@ -144,11 +144,8 @@ class ConfidenceAggregator:
         # This represents the strength of the signal regardless of direction
         signal_score = abs(composite_signal)
         
-        # Compute total conviction by penalizing the base signal score
-        # based on the average alignment of the ML, FinGPT, and Regime models.
-        # This prevents the extreme squashing effect of multiplying 4 probabilities.
-        external_alignment = (ml_confidence + fingpt_confidence + regime_alignment) / 3.0
-        total_conviction = signal_score * external_alignment
+        # Compute total conviction by multiplying all components
+        total_conviction = signal_score * ml_confidence * fingpt_confidence * regime_alignment
         
         # Ensure result is in [0, 1] (should be guaranteed by inputs, but clip for safety)
         total_conviction = max(0.0, min(1.0, total_conviction))

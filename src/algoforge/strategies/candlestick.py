@@ -85,12 +85,17 @@ class CandlestickDetector:
         highs: np.ndarray,
         lows: np.ndarray,
         closes: np.ndarray,
+        lookback: int | None = None,
     ) -> list[CandlestickPattern]:
         """Detect all patterns across the entire series."""
         n = len(closes)
         patterns: list[CandlestickPattern] = []
 
-        for i in range(n):
+        start_idx = 0
+        if lookback is not None:
+            start_idx = max(0, n - lookback)
+
+        for i in range(start_idx, n):
             o, h, l, c = float(opens[i]), float(highs[i]), float(lows[i]), float(closes[i])
             rng = self._range(h, l)
             if rng == 0:

@@ -30,7 +30,7 @@ class EMACrossover(Strategy):
 
     def __init__(
         self,
-        min_adx: float = 20.0,
+        min_adx: float = 25.0,
         min_rr: float = 2.0,
         atr_sl_mult: float = 2.0,
         atr_tp_mult: float = 4.0,
@@ -179,8 +179,8 @@ class MeanReversion(Strategy):
         lb = self._lv(lower)
         ub = self._lv(upper)
         bb_range = (ub - lb) if (ub and lb) else 0
-        near_lower = lb is not None and price <= lb + bb_range * 0.35
-        near_upper = ub is not None and price >= ub - bb_range * 0.35
+        near_lower = lb is not None and price <= lb + bb_range * 0.15
+        near_upper = ub is not None and price >= ub - bb_range * 0.15
         lb_s = f"{lb:.6f}" if lb else "N/A"
         ub_s = f"{ub:.6f}" if ub else "N/A"
         mid_s = f"{mid:.6f}" if mid else "N/A"
@@ -207,7 +207,7 @@ class MeanReversion(Strategy):
                     price=round(price,6), sl=round(sl,6), tp=round(tp,6),
                     lb=lb_s, mid=mid_s, rsi=round(rsi,2))
         elif not near_lower:
-            thr_s = f"{lb + bb_range*0.20:.6f}" if lb else "N/A"
+            thr_s = f"{lb + bb_range*0.15:.6f}" if lb else "N/A"
             logger.info("mean_rev_skip", symbol=symbol, direction="LONG",
                 reason="price_not_near_lower_bb",
                 price=round(price,6), lb=lb_s, threshold=thr_s, rsi=round(rsi,2))
@@ -239,7 +239,7 @@ class MeanReversion(Strategy):
                     price=round(price,6), sl=round(sl,6), tp=round(tp,6),
                     ub=ub_s, mid=mid_s, rsi=round(rsi,2))
         elif not near_upper and rsi >= self._rsi_ob:
-            thr_s = f"{ub - bb_range*0.20:.6f}" if ub else "N/A"
+            thr_s = f"{ub - bb_range*0.15:.6f}" if ub else "N/A"
             logger.info("mean_rev_skip", symbol=symbol, direction="SHORT",
                 reason="price_not_near_upper_bb",
                 price=round(price,6), ub=ub_s, threshold=thr_s, rsi=round(rsi,2))
@@ -265,8 +265,8 @@ class EMABounce(Strategy):
         self,
         ema_period: int = 21,
         atr_proximity: float = 1.0,
-        atr_sl_mult: float = 1.5,
-        atr_tp_mult: float = 3.0,
+        atr_sl_mult: float = 2.5,
+        atr_tp_mult: float = 5.0,
         min_rr: float = 1.5,
     ) -> None:
         self._ema_period = ema_period
@@ -314,6 +314,11 @@ class EMABounce(Strategy):
         if any(v is None for v in [ema21, ema9, atr, rsi, adx]):
             return []
 
+        # Check ADX minimum filter (Component 5 check)
+        if adx < 20.0:
+            logger.info("ema_bounce_skip", symbol=symbol, reason=f"ADX_too_low adx={adx:.1f}<20.0")
+            return []
+
         price = closes[-1]
         signals: list[Signal] = []
         dist_to_ema = abs(price - ema21)
@@ -322,10 +327,10 @@ class EMABounce(Strategy):
         # UPTREND: EMA9 > EMA21, price near EMA21, RSI not overbought
         if ema9 > ema21:
             if dist_to_ema <= prox_threshold:
-                if rsi < 65:
+                if rsi < 60:  # Tightened from 65 to 60
                     # Confirm upward momentum: RSI not collapsing (>30) and price within zone
                     # Removed single-candle close check — too noisy on 1m timeframe
-                    sl = min(lows[-3:]) - atr * self._atr_sl if len(lows) >= 3 else price - atr * self._atr_sl * 2
+                    sl = price - atr * self._atr_sl
                     tp = price + atr * self._atr_tp
                     risk = price - sl
                     reward = tp - price
@@ -344,16 +349,16 @@ class EMABounce(Strategy):
                             sl=round(sl,4), tp=round(tp,4), atr=round(atr,4))
                 else:
                     logger.info("ema_bounce_skip", symbol=symbol, direction="LONG",
-                        reason=f"RSI_overbought rsi={rsi:.1f}>=65")
+                        reason=f"RSI_overbought rsi={rsi:.1f}>=60")
             else:
                 logger.info("ema_bounce_skip", symbol=symbol, direction="LONG",
                     reason=f"price_far_from_EMA21 dist={dist_to_ema:.4f} threshold={prox_threshold:.4f} ({dist_to_ema/atr:.1f}xATR)")
         # DOWNTREND: EMA9 < EMA21
         elif ema9 < ema21:
             if dist_to_ema <= prox_threshold:
-                if rsi > 35:
+                if rsi > 40:  # Tightened from 35 to 40
                     # Confirm downward momentum via RSI direction — removed single-candle check
-                    sl = max(highs[-3:]) + atr * self._atr_sl if len(highs) >= 3 else price + atr * self._atr_sl * 2
+                    sl = price + atr * self._atr_sl
                     tp = price - atr * self._atr_tp
                     risk = sl - price
                     reward = price - tp
@@ -372,7 +377,7 @@ class EMABounce(Strategy):
                             sl=round(sl,4), tp=round(tp,4), atr=round(atr,4))
                 else:
                     logger.info("ema_bounce_skip", symbol=symbol, direction="SHORT",
-                        reason=f"RSI_oversold rsi={rsi:.1f}<=35")
+                        reason=f"RSI_oversold rsi={rsi:.1f}<=40")
             else:
                 logger.info("ema_bounce_skip", symbol=symbol, direction="SHORT",
                     reason=f"price_far_from_EMA21 dist={dist_to_ema:.4f} threshold={prox_threshold:.4f} ({dist_to_ema/atr:.1f}xATR)")

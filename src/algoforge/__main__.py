@@ -42,7 +42,40 @@ async def main() -> None:
     # 2. Initialize components
     event_bus = EventBus()
     feed = YFinanceFeed()
-    store = RedisStore()
+    # Attempt to use a real Redis server; fall back to fakeredis for local dev
+    settings = get_settings()
+    store = None
+    try:
+        import redis.asyncio as aioredis
+
+        test_client = aioredis.Redis(
+            host=settings.redis.host,
+            port=settings.redis.port,
+            db=settings.redis.db,
+            password=settings.redis.password,
+            socket_timeout=1,
+        )
+
+        try:
+            await test_client.ping()
+            # Real Redis is reachable — use normal RedisStore
+            store = RedisStore()
+        finally:
+            try:
+                await test_client.aclose()
+            except Exception:
+                pass
+    except Exception:
+        # Redis not available — try fakeredis in-memory fallback
+        try:
+            import fakeredis.aioredis as fakeredis_aioredis
+
+            fake_client = fakeredis_aioredis.FakeRedis()
+            store = RedisStore(redis_client=fake_client)
+            structlog.get_logger().info("redis.fallback", method="fakeredis")
+        except Exception:
+            # Last resort: use RedisStore which will attempt to connect later
+            store = RedisStore()
     pipeline = DataPipeline(feed=feed, cache=store, event_bus=event_bus)
 
     # 3. Setup graceful shutdown

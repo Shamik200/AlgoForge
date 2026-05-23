@@ -91,7 +91,11 @@ class CompressingTimedRotatingFileHandler(TimedRotatingFileHandler):
     
     def doRollover(self) -> None:
         """Perform rollover and compress the old log file."""
-        super().doRollover()
+        try:
+            super().doRollover()
+        except PermissionError:
+            # Silently skip log rotation when the file is locked by another process (common on Windows)
+            return
         
         # Find the rotated file and compress it
         if self.backupCount > 0:

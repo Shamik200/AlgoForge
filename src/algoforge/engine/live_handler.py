@@ -196,28 +196,34 @@ async def handle_live_tick(
             # Normalize to 0.0-1.0 range (scores are 0-100)
             score_weight = min(1.0, max(0.0, asset_score / 100.0))
             
-            fills = state.orchestrator.process_bar(
-                symbol=sym,
-                timeframe=Timeframe.M1,
-                indicators=indicators,
-                structure=structure,
-                regime_result=regime_result,
-                closes=series.closes,
-                highs=series.highs,
-                lows=series.lows,
-                volumes=series.volumes,
-                opens=[c.open for c in series.candles],
-                current_bar=series.count,
-                ml_features=ml_features if state._ml_trained else None,
-                signal_family_results=signal_family_results,
-                htf_structure=htf_context.htf_structure if htf_context else None,
-                htf_regime=htf_context.htf_regime.primary_regime if htf_context else None,
-                order_book=state.live_books.get(sym),
-                score_weight=score_weight,
-            )
+            # Component 1: Duplicate position prevention
+            open_symbols = {p.symbol for p in state.orchestrator.connector.open_positions}
+            if sym in open_symbols:
+                log_msg(state, f"[{sym}] SKIP | already in position (duplicate prevention)")
+                fills = []
+            else:
+                fills = state.orchestrator.process_bar(
+                    symbol=sym,
+                    timeframe=Timeframe.M1,
+                    indicators=indicators,
+                    structure=structure,
+                    regime_result=regime_result,
+                    closes=series.closes,
+                    highs=series.highs,
+                    lows=series.lows,
+                    volumes=series.volumes,
+                    opens=[c.open for c in series.candles],
+                    current_bar=series.count,
+                    ml_features=ml_features if state._ml_trained else None,
+                    signal_family_results=signal_family_results,
+                    htf_structure=htf_context.htf_structure if htf_context else None,
+                    htf_regime=htf_context.htf_regime.primary_regime if htf_context else None,
+                    order_book=state.live_books.get(sym),
+                    score_weight=score_weight,
+                )
 
-            # Log fills
-            await _log_fills(state, sym, fills, broadcast_fn)
+                # Log fills
+                await _log_fills(state, sym, fills, broadcast_fn)
 
         except Exception as e:
             decision = _error_recovery.handle_exception(

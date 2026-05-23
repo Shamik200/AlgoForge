@@ -124,6 +124,19 @@ class TimescaleStore:
                 await conn.execute(CREATE_AGG_5M)
             except Exception:
                 pass  # Aggregate may already exist
+            
+            try:
+                # Add background refresh policy for 5m continuous aggregate
+                await conn.execute("""
+                    SELECT add_continuous_aggregate_policy('ohlcv_5m',
+                        start_offset => INTERVAL '1 month',
+                        end_offset => INTERVAL '1 hour',
+                        schedule_interval => INTERVAL '1 hour');
+                """)
+                logger.info("timescale_store.schema.refresh_policy_created")
+            except Exception:
+                pass  # Policy may already exist or DB is offline/in-memory
+
 
     # ------------------------------------------------------------------
     # Write operations
